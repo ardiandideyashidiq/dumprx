@@ -52,11 +52,11 @@ def superimage_extract(ctx: WorkContext, extras: list[Path] | None = None) -> No
         lpunpack_partitions(ctx, raw)
     raw.unlink(missing_ok=True)
     listing = ctx.archive_listing
-    if listing is not None and hasattr(listing, "matched_names"):
+    if listing is not None and hasattr(listing, "matched_basenames"):
         for partition in PARTITIONS:
             if (work / f"{partition}.img").exists():
                 continue
-            found = listing.matched_names(rf"(^|/){partition}\.img$")
+            found = listing.matched_basenames(f"{partition}.img")
             if found:
                 listing.extract(ctx.tools.seven_zz, work, members=[found[-1]])
     super_img.unlink(missing_ok=True)

@@ -115,7 +115,8 @@ def extract_ramdisk(blob_path: Path, dest_dir: Path) -> str:
     elif data.startswith((b"\xfd7zXZ", b"\x5d\x00\x00")):
         raw_cpio = lzma.decompress(data)
         compression = "lzma"
-    elif data.startswith(b"\x04\x22\x4d\x18"):
+    elif data.startswith((b"\x04\x22\x4d\x18", b"\x02\x21\x4c\x18")):
+        # LZ4 frame (04 22 4d 18) or legacy block (02 21 4c 18); lz4 -d handles both.
         raw_cpio = subprocess.run(
             ["lz4", "-d"], input=data, check=True, capture_output=True
         ).stdout
@@ -157,9 +158,10 @@ def _unpack_one(image: Path, outdir: Path, tool: Path) -> tuple[ImageInfo, dict[
         sigtype="AVBv2" if _has_avb_footer(image) else "",
     )
 
-    kernel_load = _hex(pairs["--kernel_offset"])
-    base = kernel_load - KERNEL_OFFSET
-    info.base_address = f"0x{base:08x}"
+    kernel_offset = pairs.get("--kernel_offset")
+    if kernel_offset:
+        base = _hex(kernel_offset) - KERNEL_OFFSET
+        info.base_address = f"0x{base:08x}"
     if pairs.get("--pagesize"):
         info.pagesize = str(_hex(pairs["--pagesize"]))
     cmdline = pairs.get("--cmdline") or pairs.get("--vendor_cmdline")

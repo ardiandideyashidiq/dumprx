@@ -98,9 +98,9 @@ def promote_partitions(ctx: WorkContext) -> list[str]:
     for partition in PARTITIONS:
         img = work / f"{partition}.img"
         if not img.is_file() and ctx.archive_listing is not None and hasattr(
-            ctx.archive_listing, "matched_names"
+            ctx.archive_listing, "matched_basenames"
         ):
-            found = ctx.archive_listing.matched_names(rf"(^|/){partition}\.img$")
+            found = ctx.archive_listing.matched_basenames(f"{partition}.img")
             if found:
                 ctx.archive_listing.extract(ctx.tools.seven_zz, work, members=[found[-1]])
         if not img.is_file():

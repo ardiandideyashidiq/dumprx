@@ -65,6 +65,10 @@ class Archive:
     def matched_names(self, pattern: str) -> list[str]:
         return [line.split()[-1] for line in self.entries() if re.search(pattern, line)]
 
+    def matched_basenames(self, name: str) -> list[str]:
+        """Members whose final path segment equals `name` (flat root or nested)."""
+        return [n for n in self.member_names if n.split("/")[-1] == name]
+
     def extract(
         self,
         seven_zz: str,

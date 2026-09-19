@@ -227,6 +227,34 @@ def test_promote_partitions_moves_and_converts(tmp_path, monkeypatch):
     assert "system" in promoted
 
 
+def test_promote_partitions_pulls_flat_root_boot_from_listing(tmp_path, monkeypatch):
+    # 7zz l -ba lines: a flat root member is preceded by spaces, not "/" or line
+    # start, so the old (^|/) regex never matched it. Matchers must fall back to
+    # member basename equality or boot/vendor_boot/dtbo are silently dropped.
+    class FakeListing:
+        def __init__(self, outdir):
+            self._work = None
+            self._outdir = outdir
+
+        def matched_basenames(self, name):
+            return ["boot.img"] if name == "boot.img" else []
+
+        def extract(self, seven_zz, work, members=None):
+            (work / "boot.img").write_bytes(b"raw")
+            return True
+
+    ctx = _ctx(tmp_path, listing=FakeListing(tmp_path))
+    work, out = ctx.workdir, ctx.outdir
+    (work / "system.img").write_bytes(b"raw")
+    ctx.archive_listing._work = work
+    import dumprx.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline, "to_raw_image", lambda tools, src, dst: True)
+    promoted = promote_partitions(ctx)
+    assert (out / "boot.img").read_bytes() == b"raw"
+    assert "boot" in promoted
+
+
 # --- 10.4 cleanup ---
 
 

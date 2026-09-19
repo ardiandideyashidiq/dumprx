@@ -80,6 +80,22 @@ def test_listing_file_backed(tmp_path, monkeypatch):
     assert arc2.matched_names("system") == ["system.img"]
 
 
+def test_matched_basenames_flat_and_nested(tmp_path, monkeypatch):
+    listing_file = tmp_path / "list.txt"
+    lines = (
+        "2023-01-01 00:00:00 a boot.img\n"  # flat root member
+        "2023-01-01 00:00:00 a Global/vbmeta.img\n"  # nested member
+        "2023-01-01 00:00:00 a vendor_boot-debug.img\n"  # must not match vendor_boot.img
+    )
+    run_with_stdout(monkeypatch, lines)
+
+    arc = Archive(tmp_path / "fw.zip", listing_file=listing_file)
+    arc.write_listing("7zz")
+    assert arc.matched_basenames("boot.img") == ["boot.img"]
+    assert arc.matched_basenames("vbmeta.img") == ["Global/vbmeta.img"]
+    assert arc.matched_basenames("vendor_boot.img") == []
+
+
 def test_extract_tolerant_missing_members(tmp_path, monkeypatch):
     captured: dict = {}
 
