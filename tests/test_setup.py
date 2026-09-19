@@ -77,6 +77,7 @@ def test_install_uv_sudo_user(monkeypatch):
     monkeypatch.setattr(setupmod, "run_visible", lambda argv: calls.append(argv) or 0)
     setupmod.install_uv()
     assert calls[0][:3] == ["sudo", "-u", "alice"]
+    assert calls[0][3:] == ["bash", "-c", f"curl -sL {setupmod.UV_INSTALL_URL} | bash"]
 
 
 def test_install_uv_no_sudo(monkeypatch):
@@ -84,7 +85,7 @@ def test_install_uv_no_sudo(monkeypatch):
     monkeypatch.delenv("SUDO_USER", raising=False)
     monkeypatch.setattr(setupmod, "run_visible", lambda argv: calls.append(argv) or 0)
     setupmod.install_uv()
-    assert calls[0][:2] == ["bash", "-c"]
+    assert calls[0] == ["bash", "-c", f"curl -sL {setupmod.UV_INSTALL_URL} | bash"]
 
 
 def test_install_system_packages_apt(monkeypatch):

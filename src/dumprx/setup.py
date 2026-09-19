@@ -137,7 +137,7 @@ def install_system_packages(pm: str) -> None:
 
 def install_uv() -> None:
     """Install uv via the astral installer, honoring SUDO_USER like setup.sh."""
-    script = f"$(curl -sL {UV_INSTALL_URL})"
+    script = f"curl -sL {UV_INSTALL_URL} | bash"
     argv: list[str] = ["bash", "-c", script]
     sudo_user = os.environ.get("SUDO_USER")
     if sudo_user and shutil.which("sudo"):
