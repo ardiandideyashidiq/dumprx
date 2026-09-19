@@ -113,7 +113,14 @@ def _setup(monkeypatch, tmp_path, mode_flags, *, readme_only=False):
     monkeypatch.setattr(cli, "bootstrap", lambda *a, **k: None)
     monkeypatch.setattr(cli, "setup_complete", lambda: True)
     calls = []
-    monkeypatch.setattr(cli, "run_pipeline", lambda ctx: calls.append("pipeline"))
+    from dumprx.pipeline import PipelineResult
+
+    monkeypatch.setattr(
+        cli,
+        "run_pipeline",
+        lambda ctx: calls.append("pipeline")  # noqa: B023
+        or PipelineResult(outdir=ctx.outdir, terminal="", partitions=["system"]),
+    )
     monkeypatch.setattr(cli, "resolve_source", lambda src, cfg: _Resolved("file", src))
     monkeypatch.setattr(cli, "init_repo", lambda out, br, fallback_branch="": br)
     monkeypatch.setattr(cli, "commit_local", lambda *a, **k: calls.append("commit"))
@@ -122,6 +129,16 @@ def _setup(monkeypatch, tmp_path, mode_flags, *, readme_only=False):
         cli, "write_readme", lambda o, info: calls.append("readme") or (o / "README.md")
     )
     monkeypatch.setattr(cli, "generate_twrp", lambda *a, **k: calls.append("twrp"))
+    import dumprx.notify as notify_mod
+
+    monkeypatch.setattr(
+        notify_mod,
+        "send_tg_event",
+        lambda config, text, *, min_level="normal": calls.append("tg_event") or True,
+    )
+    monkeypatch.setattr(
+        notify_mod, "send_tg_alert", lambda config, text: calls.append("tg_alert") or True
+    )
     return calls
 
 
@@ -137,7 +154,7 @@ def test_main_local_phase_order(monkeypatch, tmp_path):
     calls = _setup(monkeypatch, tmp_path, ["-m", "local"])
     rc = cli.main(["-m", "local", str(tmp_path / "f.bin"), "--no-setup"])
     assert rc == 0
-    assert calls == ["pipeline", "props", "readme", "twrp", "commit"]
+    assert calls == ["tg_event", "pipeline", "tg_event", "props", "readme", "twrp", "commit", "tg_event"]
 
 
 def test_main_gitlab_phase_order(monkeypatch, tmp_path):
@@ -153,7 +170,7 @@ def test_main_gitlab_phase_order(monkeypatch, tmp_path):
     monkeypatch.setattr(pubmod, "publish", fake_publish)
     rc = cli.main(["--gitlab", "--push-only", "--no-setup"])
     assert rc == 0
-    assert calls == ["props", "readme", "twrp", "commit", "publish", "notify"]
+    assert calls == ["props", "readme", "twrp", "commit", "tg_event", "publish", "notify"]
 
 
 def test_main_publish_failure_returns_1(monkeypatch, tmp_path):
@@ -167,7 +184,7 @@ def test_main_publish_failure_returns_1(monkeypatch, tmp_path):
     monkeypatch.setattr(pubmod, "publish", boom)
     rc = cli.main(["--gitlab", "--push-only", "--no-setup"])
     assert rc == 1
-    assert calls[-1] == "publish"
+    assert calls[-1] == "tg_alert"  # publish failure triggers an always-on alert
 
 
 def test_main_local_commit_uses_gitlab_lfs_sizing(monkeypatch, tmp_path):
@@ -270,3 +287,145 @@ def test_help_exits_zero():
     assert "--force" in result.output
     assert "Mode" in result.output
     assert "Setup" in result.output
+
+
+def _tg_cfg(tmp_path, verbosity="normal"):
+    from dumprx.config import Config, Paths, Secrets, Settings
+
+    out = tmp_path / "out"
+    out.mkdir(parents=True, exist_ok=True)
+    return Config(
+        paths=Paths(tmp_path, tmp_path / "input", tmp_path / "utils", out),
+        settings=Settings(tg_verbosity=verbosity),
+        secrets=Secrets(tg_token="tok"),
+    )
+
+
+@pytest.mark.parametrize("verbosity", ["normal", "verbose"])
+def test_extraction_and_commit_messages(monkeypatch, tmp_path, verbosity):
+    msgs = []
+    cfg = _tg_cfg(tmp_path, verbosity)
+    monkeypatch.setattr(cli, "build_config", lambda **kw: cfg)
+    monkeypatch.setattr(cli, "bootstrap", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "setup_complete", lambda: True)
+    monkeypatch.setattr(cli, "resolve_source", lambda src, cfg: _Resolved("file", src))
+    monkeypatch.setattr(cli, "init_repo", lambda out, br, fallback_branch="": "flavor-br")
+    monkeypatch.setattr(cli, "commit_local", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "_make_info", lambda config: _Info())
+    monkeypatch.setattr(cli, "write_readme", _readme_fake)
+    monkeypatch.setattr(cli, "generate_twrp", lambda *a, **k: None)
+
+    import dumprx.notify as notify_mod
+
+    monkeypatch.setattr(
+        notify_mod,
+        "send_tg_event",
+        lambda config, text, *, min_level="normal": msgs.append((min_level, text)) or True,
+    )
+    monkeypatch.setattr(notify_mod, "send_tg_alert", lambda config, text: msgs.append(("alert", text)) or True)
+
+    from dumprx.pipeline import PipelineResult
+
+    monkeypatch.setattr(
+        cli,
+        "run_pipeline",
+        lambda ctx: PipelineResult(outdir=ctx.outdir, terminal="", partitions=["system", "vendor"]),
+    )
+
+    rc = cli.main(["-m", "local", str(tmp_path / "firmware&1.bin"), "--no-setup"])
+    assert rc == 0
+
+    started = [t for lvl, t in msgs if "extraction started" in t]
+    assert started and "firmware&amp;1.bin" in started[0]  # source name, HTML-escaped
+    finished = [t for lvl, t in msgs if "extraction finished" in t]
+    assert finished and "2 partitions" in finished[0]
+    committed = [t for lvl, t in msgs if "committed locally" in t]
+    assert committed and str(tmp_path / "out") in committed[0]
+    assert (" after " in finished[0]) == (verbosity == "verbose")
+    assert ("branch flavor-br" in committed[0]) == (verbosity == "verbose")
+
+
+def test_final_card_sent_at_minimal_threshold(monkeypatch, tmp_path):
+    msgs = []
+    import dumprx.notify as notify_mod
+
+    monkeypatch.setattr(
+        notify_mod,
+        "send_tg_event",
+        lambda config, text, *, min_level="normal": msgs.append(min_level) or True,
+    )
+    from dumprx.props.models import FirmwareInfo
+
+    info = FirmwareInfo(manufacturer="X", codename="a", description="d", branch="b")
+    cli._notify(_tg_cfg(tmp_path, verbosity="minimal"), info, "https://g/tree/x/", "gitlab")
+    assert msgs == ["minimal"]
+
+
+def test_pipeline_failure_alerts(monkeypatch, tmp_path):
+    alerts = []
+    _setup(monkeypatch, tmp_path, ["--gitlab"])
+    import dumprx.notify as notify_mod
+
+    monkeypatch.setattr(notify_mod, "send_tg_alert", lambda config, text: alerts.append(text) or True)
+
+    from dumprx.process import ProcessError
+
+    def boom(ctx):
+        raise ProcessError("boom")
+
+    monkeypatch.setattr(cli, "run_pipeline", boom)
+    rc = cli.main(["--gitlab", str(tmp_path / "f.bin"), "--no-setup"])
+    assert rc == 1
+    assert alerts and "pipeline failed" in alerts[0] and "boom" in alerts[0]
+
+
+def test_prop_error_alerts(monkeypatch, tmp_path):
+    alerts = []
+    _setup(monkeypatch, tmp_path, ["--gitlab"])
+    import dumprx.notify as notify_mod
+
+    monkeypatch.setattr(notify_mod, "send_tg_alert", lambda config, text: alerts.append(text) or True)
+
+    def boom(config):
+        raise cli.PropError("no props")
+
+    monkeypatch.setattr(cli, "_make_info", boom)
+    rc = cli.main(["--gitlab", "--push-only", "--no-setup"])
+    assert rc == 1
+    assert alerts and "property parse failed" in alerts[0]
+
+
+def test_commit_failure_alerts(monkeypatch, tmp_path):
+    alerts = []
+    _setup(monkeypatch, tmp_path, ["--gitlab"])
+    import dumprx.notify as notify_mod
+
+    monkeypatch.setattr(notify_mod, "send_tg_alert", lambda config, text: alerts.append(text) or True)
+
+    def boom(*a, **k):
+        raise RuntimeError("index lock")
+
+    monkeypatch.setattr(cli, "commit_local", boom)
+    rc = cli.main(["--gitlab", "--push-only", "--no-setup"])
+    assert rc == 1
+    assert alerts and "local commit failed" in alerts[0]
+
+
+def test_publish_failure_alert_mentions_preserved_dump(monkeypatch, tmp_path):
+    alerts = []
+    calls = _setup(monkeypatch, tmp_path, ["--gitlab"])
+    import dumprx.notify as notify_mod
+
+    monkeypatch.setattr(notify_mod, "send_tg_alert", lambda config, text: alerts.append(text) or True)
+
+    import dumprx.publishers as pubmod
+
+    def boom(config, info, branch):
+        calls.append("publish")
+        raise RuntimeError("auth failed")
+
+    monkeypatch.setattr(pubmod, "publish", boom)
+    rc = cli.main(["--gitlab", "--push-only", "--no-setup"])
+    assert rc == 1
+    assert alerts and "publish failed" in alerts[0]
+    assert str(tmp_path / "out") in alerts[0]  # dump preserved for re-push

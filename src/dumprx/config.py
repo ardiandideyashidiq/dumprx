@@ -88,6 +88,14 @@ def _log_level() -> str:
     return os.environ.get("DUMPRX_LOG_LEVEL", "DEBUG").upper()
 
 
+_TG_VERBOSITY_LEVELS = ("minimal", "normal", "verbose")
+
+
+def _tg_verbosity_of(raw: str | None) -> str:
+    value = (raw or "normal").strip().lower()
+    return value if value in _TG_VERBOSITY_LEVELS else "normal"
+
+
 def _nproc() -> int:
     try:
         return len(os.sched_getaffinity(0))
@@ -149,6 +157,7 @@ class Settings:
     force: bool = False
     jobs: int = 4
     log_level: str = "DEBUG"
+    tg_verbosity: str = "normal"
 
 
 @dataclass(frozen=True)
@@ -214,5 +223,6 @@ def build_config(
         force=force,
         jobs=jobs or _int_env("DUMPRX_JOBS", _nproc()),
         log_level=(log_level or _log_level()),
+        tg_verbosity=_tg_verbosity_of(env.get("TG_VERBOSITY")),
     )
     return Config(paths=paths, settings=settings, secrets=secrets)

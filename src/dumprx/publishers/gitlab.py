@@ -46,6 +46,13 @@ def publish(config: Config, info: FirmwareInfo, branch: str) -> str:
     git("remote", "add", "origin", f"git@{instance}:{org}/{repo}.git", cwd=outdir)
 
     repo_desc = info.transname or info.codename
+    from dumprx.notify import esc, send_tg_event
+
+    send_tg_event(
+        config,
+        f"DumprX: uploading dump to GitLab {esc(f'{org}/{repo}')}...",
+        min_level="normal",
+    )
     logger.info("Pushing to {} via SSH... Branch: {}", host, branch)
     push_all(outdir, branch)
 

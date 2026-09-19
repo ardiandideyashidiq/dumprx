@@ -52,6 +52,13 @@ def publish(config: Config, info: FirmwareInfo, branch: str) -> str:
     )
 
     git("remote", "add", "origin", f"git@github.com:{org}/{gh_repo}.git", cwd=outdir)
+    from dumprx.notify import esc, send_tg_event
+
+    send_tg_event(
+        config,
+        f"DumprX: uploading dump to GitHub {esc(f'{org}/{gh_repo}')}...",
+        min_level="normal",
+    )
     logger.info("Pushing to https://github.com/{}.git via SSH... Branch: {}", org, branch)
     push_all(outdir, branch)
 

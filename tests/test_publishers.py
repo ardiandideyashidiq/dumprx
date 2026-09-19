@@ -172,6 +172,88 @@ def test_gitlab_publish_api_sequence(monkeypatch, tmp_path):
     assert ("PUT", "https://gitlab.com/api/v4/projects/22") in calls  # visibility put
 
 
+def test_gitlab_uploading_notification_before_push_all(monkeypatch, tmp_path):
+    from dumprx.config import Paths
+
+    outdir = tmp_path / "out"
+    outdir.mkdir()
+    (outdir / "README.md").write_text("x")
+    cfg = build_config(mode="gitlab").with_secrets(
+        Secrets(gitlab_token="tok", gitlab_group="grp", tg_token="tok")
+    )
+    cfg = cfg.with_paths(
+        Paths(project_dir=tmp_path, inputdir=tmp_path / "input", utilsdir=tmp_path / "utils", outdir=outdir)
+    )
+    order = []
+    msgs = []
+
+    def fake_http(url, *, headers=None, method="GET", payload=None, timeout=60):
+        if url.endswith("/-/raw/br/all_files.txt"):
+            return 404, "no"
+        if url == "https://gitlab.com/api/v4/groups/grp":
+            return 200, json.dumps({"id": 7})
+        if url == "https://gitlab.com/api/v4/groups/grp/subgroups":
+            return 200, json.dumps([{"name": "Infinix", "id": 11}])
+        if url == "https://gitlab.com/api/v4/groups/11/projects":
+            return 200, json.dumps([{"name": "X6878", "id": 22}])
+        return 201, "{}"
+
+    monkeypatch.setattr(gl, "http_request", fake_http)
+    monkeypatch.setattr(gl, "git", lambda *a, **k: _R(0))
+    monkeypatch.setattr(gl, "push_all", lambda *a, **k: order.append("push_all") or None)
+
+    import dumprx.notify as notify_mod
+
+    monkeypatch.setattr(
+        notify_mod,
+        "send_tg_event",
+        lambda config, text, *, min_level="normal": msgs.append((min_level, text)) or True,
+    )
+
+    gl.publish(cfg, _info(), "br")
+    assert order == ["push_all"]  # push only after the notification
+    assert msgs and msgs[0][0] == "normal"
+    assert "GitLab" in msgs[0][1] and "grp/Infinix/X6878" in msgs[0][1]
+
+
+def test_github_uploading_notification_before_push_all(monkeypatch, tmp_path):
+    from dumprx.config import Paths
+
+    outdir = tmp_path / "out"
+    outdir.mkdir()
+    (outdir / "README.md").write_text("x")
+    cfg = build_config(mode="github").with_secrets(
+        Secrets(github_token="tok", github_org="acme", tg_token="tok")
+    )
+    cfg = cfg.with_paths(
+        Paths(project_dir=tmp_path, inputdir=tmp_path / "input", utilsdir=tmp_path / "utils", outdir=outdir)
+    )
+    order = []
+    msgs = []
+
+    def fake_http(url, *, headers=None, method="GET", payload=None, timeout=60):
+        if url.startswith("https://raw.githubusercontent.com"):
+            return 404, "not found"
+        return 200, json.dumps({"name": "X6878_dump", "id": 1})
+
+    monkeypatch.setattr(gh, "http_request", fake_http)
+    monkeypatch.setattr(gh, "git", lambda *a, **k: _R(0))
+    monkeypatch.setattr(gh, "push_all", lambda *a, **k: order.append("push_all") or None)
+
+    import dumprx.notify as notify_mod
+
+    monkeypatch.setattr(
+        notify_mod,
+        "send_tg_event",
+        lambda config, text, *, min_level="normal": msgs.append((min_level, text)) or True,
+    )
+
+    gh.publish(cfg, _info("X6878"), "branch-x")
+    assert order == ["push_all"]
+    assert msgs and msgs[0][0] == "normal"
+    assert "GitHub" in msgs[0][1] and "acme/X6878_dump" in msgs[0][1]
+
+
 def test_retry_push_gives_up_after_5(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(base, "git", lambda *a, **k: calls.append(a) or _R(1))

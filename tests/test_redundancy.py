@@ -94,14 +94,21 @@ def _setup(monkeypatch, tmp_path):
             {
                 "paths": Paths(tmp_path, tmp_path / "input", tmp_path / "utils", out),
                 "settings": Settings(**{k: v for k, v in kw.items() if k != "outdir"}),
-                "secrets": type("Sec", (), {"tg_token": "tok"}),
+                "secrets": type("Sec", (), {"tg_token": "tok", "tg_chat": ""}),
             },
         )()
 
     monkeypatch.setattr(cli, "build_config", fake_config)
     monkeypatch.setattr(cli, "bootstrap", lambda *a, **k: None)
     monkeypatch.setattr(cli, "setup_complete", lambda: True)
-    monkeypatch.setattr(cli, "run_pipeline", lambda ctx: None)
+
+    from dumprx.pipeline import PipelineResult
+
+    monkeypatch.setattr(
+        cli,
+        "run_pipeline",
+        lambda ctx: PipelineResult(outdir=out, terminal="", partitions=["system"]),
+    )
     monkeypatch.setattr(cli, "init_repo", lambda out, br, fallback_branch="": br)
     monkeypatch.setattr(cli, "commit_local", lambda *a, **k: None)
     monkeypatch.setattr(cli, "_make_info", lambda config: _Info())
@@ -120,7 +127,10 @@ def test_main_bails_before_pipeline_on_same_file(monkeypatch, tmp_path):
     calls: list[str] = []
 
     def fake_pipeline(ctx):
+        from dumprx.pipeline import PipelineResult
+
         calls.append("pipeline")
+        return PipelineResult(outdir=ctx.outdir, terminal="", partitions=["system"])
 
     monkeypatch.setattr(cli, "run_pipeline", fake_pipeline)
     out = tmp_path / "out"
@@ -140,7 +150,10 @@ def test_main_force_overrides_redundancy(monkeypatch, tmp_path):
     calls: list[str] = []
 
     def fake_pipeline(ctx):
+        from dumprx.pipeline import PipelineResult
+
         calls.append("pipeline")
+        return PipelineResult(outdir=ctx.outdir, terminal="", partitions=["system"])
 
     monkeypatch.setattr(cli, "run_pipeline", fake_pipeline)
     out = tmp_path / "out"

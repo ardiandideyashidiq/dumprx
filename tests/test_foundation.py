@@ -69,6 +69,20 @@ def test_config_missing_env_file_defaults(tmp_path):
     assert conf.settings.visibility == "private"
 
 
+def test_tg_verbosity_env_parsing(tmp_path):
+    write_env(tmp_path, 'export TG_VERBOSITY="verbose"\n')
+    assert build_config(project_dir=tmp_path).settings.tg_verbosity == "verbose"
+
+    write_env(tmp_path, 'export TG_VERBOSITY="minimal"\n')
+    assert build_config(project_dir=tmp_path).settings.tg_verbosity == "minimal"
+
+    write_env(tmp_path, 'export TG_VERBOSITY="bogus"\n')
+    assert build_config(project_dir=tmp_path).settings.tg_verbosity == "normal"
+
+    write_env(tmp_path, "")
+    assert build_config(project_dir=tmp_path).settings.tg_verbosity == "normal"
+
+
 def test_paths_derived(tmp_path):
     conf = build_config(project_dir=tmp_path)
     assert conf.paths.inputdir == tmp_path / "input"

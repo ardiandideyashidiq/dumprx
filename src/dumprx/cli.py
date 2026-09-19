@@ -8,6 +8,7 @@ Mode defaults to `gitlab` (the bash default), visibility to `private`.
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 import rich_click as click
@@ -17,6 +18,7 @@ from dumprx.config import build_config
 from dumprx.downloader import DownloadError, download_into
 from dumprx.extractors.base import StageLimitError, WorkContext
 from dumprx.logger import bootstrap
+from dumprx.notify import esc
 from dumprx.pipeline import install_cleanup, run_pipeline
 from dumprx.process import ProcessError
 from dumprx.props.models import FirmwareInfo, derive
@@ -148,15 +150,26 @@ def cli(
             ctx = _make_context(config)
             ctx.source = resolved.path or ctx.workdir
             install_cleanup(ctx.workdir)
-            run_pipeline(ctx)
+            start = time.monotonic()
+            _notify_event(config, f"DumprX: extraction started {esc(ctx.source.name)}")
+            result = run_pipeline(ctx)
+            elapsed = ""
+            if config.settings.tg_verbosity == "verbose":
+                elapsed = f" after {_fmt_elapsed(time.monotonic() - start)}"
+            _notify_event(
+                config,
+                f"DumprX: extraction finished ({len(result.partitions)} partitions){elapsed}",
+            )
         except (ResolutionError, DownloadError, ProcessError, StageLimitError) as exc:
             logger.error("pipeline failed: {}", exc)
+            _notify_failure(config, "pipeline", exc)
             return 1
 
     try:
         info = _make_info(config)
     except PropError as exc:
         logger.error(str(exc))
+        _notify_failure(config, "property parse", exc)
         return 1
 
     readme_path = write_readme(config.paths.outdir, info)
@@ -179,7 +192,16 @@ def cli(
         )
     except BaseException as exc:  # noqa: BLE001 - commit failures surface as messages
         logger.error("local commit failed: {}", exc)
+        _notify_failure(config, "local commit", exc)
         return 1
+
+    branch_detail = ""
+    if config.settings.tg_verbosity == "verbose":
+        branch_detail = f" (branch {esc(branch)})"
+    _notify_event(
+        config,
+        f"DumprX: dump committed locally at {esc(str(config.paths.outdir))}{branch_detail}",
+    )
 
     if mode == "local":
         record(digest, outdir=config.paths.outdir, mode=mode, info=info)
@@ -198,6 +220,7 @@ def cli(
             exc,
             config.paths.outdir,
         )
+        _notify_failure(config, "publish", exc, outdir=str(config.paths.outdir))
         return 1
     record(digest, outdir=config.paths.outdir, mode=mode, info=info)
     _notify(config, info, tree_url, mode)
@@ -235,12 +258,30 @@ def _make_info(config) -> FirmwareInfo:
 
 
 def _notify(config, info: FirmwareInfo, tree_url: str, mode: str) -> None:
-    if not config.secrets.tg_token:
-        return
-    from dumprx.notify import send_tg_html
+    from dumprx.notify import send_tg_event
 
     label = "GitLab Tree" if mode == "gitlab" else "GitHub Tree"
-    send_tg_html(build_tg_html(info, tree_url, label), config)
+    send_tg_event(config, build_tg_html(info, tree_url, label), min_level="minimal")
+
+
+def _notify_event(config, text: str) -> None:
+    """Fire a milestone notification at the default (normal) threshold."""
+    from dumprx.notify import send_tg_event
+
+    send_tg_event(config, text, min_level="normal")
+
+
+def _notify_failure(config, stage: str, exc: BaseException, *, outdir: str = "") -> None:
+    """Always-on failure alert; never gated by verbosity."""
+    from dumprx.notify import send_tg_alert
+
+    preserved = f" - dump preserved at {esc(outdir)}" if outdir else ""
+    send_tg_alert(config, f"DumprX: {stage} failed: {esc(exc)}{preserved}")
+
+
+def _fmt_elapsed(seconds: float) -> str:
+    mins, secs = divmod(int(seconds), 60)
+    return f"{mins}m{secs:02d}s" if mins else f"{secs}s"
 
 
 def main(argv: list[str] | None = None) -> int:
