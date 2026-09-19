@@ -30,7 +30,7 @@ build-backend = "uv_build"
 package = true
 
 [tool.uv.build-backend]
-module-name = ["dumprx", "twrpdtgen"]
+module-name = ["dumprx", "twrpdtgen", "aospdtgen"]
 
 [tool.ruff]
 line-length = 100
@@ -40,6 +40,7 @@ lint.ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/twrpdtgen/**" = ["E101", "W191", "W292"]
+"src/aospdtgen/**" = ["E101", "W191", "W292", "I001", "W605"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -19,7 +19,7 @@ binaries/scripts still live under `utils/`.
 - Keep compatibility with the existing style: dataclasses, loguru `logger`, `run()` from `dumprx.process` for subprocesses, `Path` objects everywhere.
 - Do not commit or print secrets from `.dumprxenv`. `Secrets.__repr__` redacts everything.
 - Do not add new runtime dependencies without updating `pyproject.toml` and documenting why. `uv lock` after dependency changes.
-- Validate changes with at least `uv run ruff check src/dumprx src/twrpdtgen tests` and `uv run pytest`. There is no formal firmware test suite; firmware validation is usually manual (`--local` on a real file).
+- Validate changes with at least `uv run ruff check src/dumprx src/twrpdtgen src/aospdtgen tests` and `uv run pytest`. There is no formal firmware test suite; firmware validation is usually manual (`--local` on a real file).
 
 ## Important Commands
 
@@ -33,7 +33,7 @@ uv run dumprx -o <dir> --local <firmware-file-or-url>  # dump into <dir> instead
 uv run dumprx --gitlab <firmware-file-or-url>
 uv run dumprx --gitlab --public <firmware-file-or-url>
 uv run pytest                              # full test suite
-uv run ruff check src/dumprx src/twrpdtgen tests   # lint
+uv run ruff check src/dumprx src/twrpdtgen src/aospdtgen tests   # lint
 ```
 
 Mode defaults to `gitlab` and visibility to `private` (mirrors the legacy
@@ -53,7 +53,7 @@ DumprX/
 ├── LICENSE
 ├── src/
  │   ├── dumprx/
- │   │   ├── cli.py          # click/rich-click entry point; wires setup gate -> pipeline -> props -> readme -> twrp -> publisher -> notify
+ │   │   ├── cli.py          # click/rich-click entry point; wires setup gate -> pipeline -> props -> readme -> twrp+aospdtgen -> publisher -> notify
  │   │   ├── pipeline.py     # stage queue (containers re-queue, terminals break), partition promote, finalize
  │   │   ├── config.py       # Paths/Settings/Secrets frozen dataclasses; .dumprxenv parsing
  │   │   ├── setup.py        # first-run setup: system packages, uv, runtime clones, XDG state gate
@@ -69,10 +69,12 @@ DumprX/
  │   │   ├── readme.py       # README dump card + Telegram HTML builder
  │   │   ├── notify.py       # Telegram send (failure tolerated)
  │   │   ├── twrp.py         # vendored twrpdtgen DeviceTree (adaptive image set) + wiki README fetch
+ │   │   ├── aospdtgen.py    # vendored aospdtgen DeviceTree wrapper -> aosp-device-tree/device/<manu>/<codename>/
  │   │   ├── extractors/     # registry (base.py) + containers.py + terminals.py + super.py
  │   │   ├── props/          # propper (PropStore/grep), models (FirmwareInfo.derive), board_info
  │   │   └── publishers/     # base (retry_push/LFS/commit_and_push), gitlab, github, registry
  │   └── twrpdtgen/          # vendored twrpdtgen fork; DeviceTree lib, image_info (AOSP mkbootimg unpack), templates
+ │   └── aospdtgen/          # vendored aospdtgen fork; DeviceTree lib, templates, proprietary_files sections
  └── utils/
      ├── bin/                # Prebuilt tools: 7zz, simg2img, magiskboot; AOSP mkbootimg.py/unpack_bootimg.py + gki/
      ├── downloaders/        # URL download helpers
@@ -95,6 +97,18 @@ DumprX/
    (no git flow, loguru logging, `image_info.py` unpacker, `labels`-free
    `DeviceTree`) on top of a newer fork checkout and bump the commit above in
    both `src/twrpdtgen/__init__.py` and this section.
+ - `src/aospdtgen/` — vendored from `sebaubuntu-python/aospdtgen` v1.2.1
+   (commit `ff16bea7aabf8133affd9772e12651640712ae9a`). The fork replaces AIK
+   image unpacking with the twrpdtgen fork's `image_info.unpack_images()`
+   (vendored AOSP `unpack_bootimg.py`, GKI-capable, no runtime AIK clone) and
+   deletes the stand-alone `get_vndk_libs.py` regeneration script (zero
+   importers; the hardcoded lists it regenerates stay in `ignore.py`).
+   `DeviceTree`/`BootConfiguration` accept `workdir` + `unpack_bootimg_tool`
+   kwargs injected by the wrapper. To update: re-apply the dumprx-side changes
+   (image_info-backed `boot_configuration.py`, `get_vndk_libs.py` removal,
+   `workdir`/`unpack_bootimg_tool` kwargs) on top of a newer upstream checkout
+   and bump the commit above in both `src/aospdtgen/__init__.py` and this
+   section.
  - `utils/bin/mkbootimg.py` + `utils/bin/unpack_bootimg.py` + `utils/bin/gki/` —
 vendored AOSP `platform/system/tools/mkbootimg` scripts (Apache-2.0).
     `unpack_bootimg` is a runtime tool (`tools.py` entry `unpack_bootimg`);
@@ -227,7 +241,7 @@ partitions:
   fakes; `Result` is a plain dataclass with `.ok`, `.stdout_text`.
 - `Path.write_bytes`/`write_text` return int in Python 3.13 — never use them in
   `or`-chains that must return truthy booleans.
-- Suite is green when `uv run ruff check src/dumprx src/twrpdtgen tests` and
+- Suite is green when `uv run ruff check src/dumprx src/twrpdtgen src/aospdtgen tests` and
   `uv run pytest` both pass.
 
 ## Secrets and Generated Files
@@ -247,7 +261,7 @@ Before finishing a code change:
 
 - [ ] `git status --short` checked for unrelated changes
 - [ ] Relevant module(s) read before editing
-- [ ] `uv run ruff check src/dumprx src/twrpdtgen tests` passes
+- [ ] `uv run ruff check src/dumprx src/twrpdtgen src/aospdtgen tests` passes
 - [ ] `uv run pytest` passes
 - [ ] Help text updated if CLI flags changed (`cli.py` usage + README)
 - [ ] `src/dumprx/setup.py` updated if system dependencies changed

@@ -31,7 +31,7 @@ def generate(config) -> None:
         logger.warning("unpack_bootimg not found in utils/bin; skipping TWRP tree")
         return
 
-    twrp_out = outdir / "twrp-device-tree"
+    twrp_out = outdir / "twrp-device-tree" / "device"
     dtbo = outdir / "dtbo.img" if (outdir / "dtbo.img").is_file() else None
     try:
         tree = DeviceTree(

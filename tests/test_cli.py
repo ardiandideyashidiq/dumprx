@@ -129,6 +129,9 @@ def _setup(monkeypatch, tmp_path, mode_flags, *, readme_only=False):
         cli, "write_readme", lambda o, info: calls.append("readme") or (o / "README.md")
     )
     monkeypatch.setattr(cli, "generate_twrp", lambda *a, **k: calls.append("twrp"))
+    monkeypatch.setattr(
+        cli, "generate_aospdtgen", lambda *a, **k: calls.append("aospdtgen")
+    )
     import dumprx.notify as notify_mod
 
     monkeypatch.setattr(
@@ -154,7 +157,7 @@ def test_main_local_phase_order(monkeypatch, tmp_path):
     calls = _setup(monkeypatch, tmp_path, ["-m", "local"])
     rc = cli.main(["-m", "local", str(tmp_path / "f.bin"), "--no-setup"])
     assert rc == 0
-    assert calls == ["tg_event", "pipeline", "tg_event", "props", "readme", "twrp", "commit", "tg_event"]
+    assert calls == ["tg_event", "pipeline", "tg_event", "props", "readme", "twrp", "aospdtgen", "commit", "tg_event"]
 
 
 def test_main_gitlab_phase_order(monkeypatch, tmp_path):
@@ -170,7 +173,7 @@ def test_main_gitlab_phase_order(monkeypatch, tmp_path):
     monkeypatch.setattr(pubmod, "publish", fake_publish)
     rc = cli.main(["--gitlab", "--push-only", "--no-setup"])
     assert rc == 0
-    assert calls == ["props", "readme", "twrp", "commit", "tg_event", "publish", "notify"]
+    assert calls == ["props", "readme", "twrp", "aospdtgen", "commit", "tg_event", "publish", "notify"]
 
 
 def test_main_publish_failure_returns_1(monkeypatch, tmp_path):

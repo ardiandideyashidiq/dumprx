@@ -200,5 +200,7 @@ Credit for those tools goes to everyone whosoever worked hard to put all those p
   - Originally by @xiaolu and @carlitros900, stripped to unpack functionallity, by me @rokibhasansagar
 - twrpdtgen (TWRP device tree generator, vendored fork)
   - by @SebastianoBarezzi / @ardiandideyashidiq, from [ardiandideyashidiq/twrpdtgen](https://github.com/ardiandideyashidiq/twrpdtgen) (commit `bd0badbe8e3e6eff96837f4da2a7d22a37de5094`)
+- aospdtgen (TeamLineageOS/aospdtgen device tree generator, vendored fork)
+  - from [sebaubuntu-python/aospdtgen](https://github.com/sebaubuntu-python/aospdtgen) (v1.2.1, commit `ff16bea7aabf8133affd9772e12651640712ae9a`)
 - mkbootimg.py and unpack_bootimg.py (AOSP boot image pack/unpack scripts, Apache-2.0)
   - from [platform/system/tools/mkbootimg](https://android.googlesource.com/platform/system/tools/mkbootimg)

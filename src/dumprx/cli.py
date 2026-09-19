@@ -14,6 +14,7 @@ from pathlib import Path
 import rich_click as click
 from loguru import logger
 
+from dumprx.aospdtgen import generate as generate_aospdtgen
 from dumprx.config import build_config
 from dumprx.downloader import DownloadError, download_into
 from dumprx.extractors.base import StageLimitError, WorkContext
@@ -181,6 +182,7 @@ def cli(
         return 0
 
     generate_twrp(config)
+    generate_aospdtgen(config)
 
     branch = init_repo(config.paths.outdir, info.branch, fallback_branch=info.incremental)
     try:
