@@ -432,3 +432,49 @@ def test_publish_failure_alert_mentions_preserved_dump(monkeypatch, tmp_path):
     assert rc == 1
     assert alerts and "publish failed" in alerts[0]
     assert str(tmp_path / "out") in alerts[0]  # dump preserved for re-push
+
+
+def test_interrupt_during_extraction_returns_130(monkeypatch, tmp_path):
+    """Ctrl+C mid-extraction aborts as 130, no failure alert."""
+    alerts = []
+    _setup(monkeypatch, tmp_path, ["--gitlab"])
+    import dumprx.notify as notify_mod
+
+    monkeypatch.setattr(notify_mod, "send_tg_alert", lambda config, text: alerts.append(text) or True)
+
+    def boom(ctx):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "run_pipeline", boom)
+    rc = cli.main(["--gitlab", str(tmp_path / "f.bin"), "--no-setup"])
+    assert rc == 130
+    assert alerts == []  # interrupt is not a failure alert
+
+
+def test_interrupt_during_commit_returns_130(monkeypatch, tmp_path):
+    """Ctrl+C during commit_local must not be swallowed as a commit failure."""
+    calls = _setup(monkeypatch, tmp_path, ["-m", "local"])
+
+    def boom(*a, **k):
+        calls.append("commit")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "commit_local", boom)
+    rc = cli.main(["-m", "local", str(tmp_path / "f.bin"), "--no-setup"])
+    assert rc == 130
+    assert calls[-1] == "commit"  # interrupt fired, was not caught
+
+
+def test_interrupt_during_publish_returns_130(monkeypatch, tmp_path):
+    """Ctrl+C during publish must not be swallowed as a publish failure."""
+    calls = _setup(monkeypatch, tmp_path, ["--gitlab"])
+    import dumprx.publishers as pubmod
+
+    def boom(config, info, branch):
+        calls.append("publish")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(pubmod, "publish", boom)
+    rc = cli.main(["--gitlab", "--push-only", "--no-setup"])
+    assert rc == 130
+    assert calls[-1] == "publish"

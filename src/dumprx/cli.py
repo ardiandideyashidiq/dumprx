@@ -192,7 +192,7 @@ def cli(
             mode="gitlab" if mode == "local" else mode,
             branch=branch,
         )
-    except BaseException as exc:  # noqa: BLE001 - commit failures surface as messages
+    except Exception as exc:  # noqa: BLE001 - commit failures surface as messages
         logger.error("local commit failed: {}", exc)
         _notify_failure(config, "local commit", exc)
         return 1
@@ -216,7 +216,7 @@ def cli(
 
     try:
         tree_url = publish(config, info, branch)
-    except BaseException as exc:  # noqa: BLE001 - publisher failures surface as messages
+    except Exception as exc:  # noqa: BLE001 - publisher failures surface as messages
         logger.error(
             "publish failed: {} (local commits preserved at {})",
             exc,
@@ -290,6 +290,12 @@ def main(argv: list[str] | None = None) -> int:
     """Console-script entry: exit-code contract preserved for `dumprx`."""
     try:
         return cli(args=list(argv) if argv is not None else None, standalone_mode=False, prog_name="dumprx")
+    except KeyboardInterrupt:
+        logger.info("aborted by user (Ctrl+C)")
+        return 130
+    except click.exceptions.Abort:  # click converts Ctrl+C to Abort
+        logger.info("aborted by user (Ctrl+C)")
+        return 130
     except click.exceptions.Exit as exc:
         return exc.exit_code or 0
     except click.ClickException as exc:

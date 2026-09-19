@@ -277,7 +277,8 @@ def test_install_cleanup_signal_handler(tmp_path):
     (ctx.outdir / "system.img").write_bytes(b"s")
     try:
         signal.raise_signal(signal.SIGTERM)
-    except (ValueError, OSError):
-        pass  # main-thread only in some runners
+    except KeyboardInterrupt:
+        pass  # handler aborts after cleanup, never continues over a deleted workdir
 
-    assert (ctx.outdir / "system.img").read_bytes() == b"s"
+    assert not (ctx.workdir / "payload.bin").exists()  # workdir removed on interrupt
+    assert (ctx.outdir / "system.img").read_bytes() == b"s"  # OUTDIR never touched

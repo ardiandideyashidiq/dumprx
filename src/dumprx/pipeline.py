@@ -195,15 +195,23 @@ def run_pipeline(ctx: WorkContext) -> PipelineResult:
 
 
 def install_cleanup(workdir: Path) -> None:
-    """atexit + SIGINT/SIGTERM: remove the work dir (never OUTDIR)."""
+    """atexit + SIGINT/SIGTERM: remove the work dir (never OUTDIR).
+
+    Signals abort the run after cleanup; atexit only cleans up on normal exit.
+    """
 
     def handler(*_args) -> None:
         shutil.rmtree(workdir, ignore_errors=True)
 
     atexit.register(handler)
+
+    def interrupt(*_args) -> None:
+        handler()
+        raise KeyboardInterrupt
+
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
-            signal.signal(sig, handler)
+            signal.signal(sig, interrupt)
         except (ValueError, OSError):  # not the main thread
             pass
 
