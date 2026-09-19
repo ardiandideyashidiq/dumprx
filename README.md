@@ -32,15 +32,38 @@ For any other UNIX Distributions, please refer to internal [Setup File](setup.sh
 
 ## Prepare toolkit dependencies / requirements
 
-To prepare for this toolkit, run [Setup File](setup.sh) at first, which is needed only one time. After that, run [Main Script](dumper.sh) with proper argument.
+DumprX is a Python package managed with [uv](https://docs.astral.sh/uv/).
+Initial setup is a two-step process:
+
+1. Install system-level binaries (7zz, simg2img, aria2c, etc.) once via [Setup File](setup.sh):
+   ```bash
+   ./setup.sh
+   ```
+2. Install the Python tool with uv:
+   ```bash
+   uv sync
+   ```
 
 ## Usage
 
-Run this toolkit with proper firmware file/folder path or URL
+Run this toolkit with proper firmware file/folder path or URL:
 
 ```bash
-./dumper.sh 'Firmware File/Extracted Folder -OR- Supported Website Link'
+uv run dumprx 'Firmware File/Extracted Folder -OR- Supported Website Link'
 ```
+
+Useful flags:
+
+```bash
+uv run dumprx --local firmware.bin          # extract + README, no push (recommended first run)
+uv run dumprx --readme-only                 # regenerate README.md from existing OUTDIR
+uv run dumprx --push-only 'link-or-folder'  # skip extraction, push existing OUTDIR
+uv run dumprx --github --public firmware.bin
+uv run dumprx --help
+```
+
+Mode defaults to `gitlab` (matches the legacy Bash dumper defaults), and repos are
+created private unless `--public` is given.
 
 Help Context:
 
@@ -85,9 +108,9 @@ GitHub mode works like GitLab mode but pushes to github.com instead:
    so you may need `git-lfs` installed.
 3. Run with the github mode:
    ```bash
-   ./dumper.sh --github <firmware-file-or-url>
+   uv run dumprx --github <firmware-file-or-url>
    # or
-   ./dumper.sh --mode github --public <firmware-file-or-url>
+   uv run dumprx --mode github --public <firmware-file-or-url>
    ```
 
 > GitHub has no nested namespaces, so a dump that GitLab would store as

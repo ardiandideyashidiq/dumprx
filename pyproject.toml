@@ -1,0 +1,35 @@
+[project]
+name = "dumprx"
+version = "0.1.0"
+description = "Android firmware dumper - extract, parse, and publish partition dumps"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "loguru>=0.7",
+    "rich>=13.0",
+]
+
+[project.scripts]
+dumprx = "dumprx.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.9,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+package = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+lint.select = ["E", "F", "I", "W"]
+lint.ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
