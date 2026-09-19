@@ -69,7 +69,7 @@ DumprX/
 │       ├── readme.py       # README dump card + Telegram HTML builder
 │       ├── notify.py       # Telegram send (failure tolerated)
 │       ├── twrp.py         # twrpdtgen + wiki README fetch
-│       ├── extractors/     # registry (base.py) + containers/ + terminals/
+│       ├── extractors/     # registry (base.py) + containers.py + terminals.py + super.py
 │       ├── props/          # propper (PropStore/grep), models (FirmwareInfo.derive), board_info
 │       └── publishers/     # base (retry_push/LFS/commit_and_push), gitlab, github, registry
 └── utils/
@@ -136,8 +136,10 @@ suffix and the original casing preserved (e.g. `Infinix-X6878_dump`) under
   SIN, PAC, payload.bin, UPDATE.APP, super, etc.).
 - `pipeline.extract_chain` runs the queue with a 40-hop guard; the first
   terminal to consume the input breaks the chain.
-- Register extractors with the `@extractor(order, kind)` decorator; import the
-  module in `load_extractors()`.
+- Register extractors with the `@extractor(order, kind)` decorator.
+  `load_extractors()` auto-imports every module in the `extractors` package
+  (only `base` is skipped); `ordered()` sorts all containers ahead of
+  terminals regardless of `order`.
 
 ## Pipeline Notes
 
