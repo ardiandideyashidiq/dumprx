@@ -3,18 +3,26 @@
 from __future__ import annotations
 
 import pytest
+import rich_click as click
 
 from dumprx import cli
-from dumprx.cli import build_parser
+from dumprx.cli import cli as cli_cmd
+
+
+def _parsed(argv: list[str]) -> dict:
+    return cli_cmd.make_context("dumprx", argv).params
 
 
 def test_parser_defaults():
-    args = build_parser().parse_args([])
-    assert args.mode == "gitlab"  # bash default
-    assert args.visibility == "private"
-    assert args.push_only is False
-    assert args.readme_only is False
-    assert args.firmware is None
+    params = _parsed([])
+    assert params["mode"] == "gitlab"  # bash default
+    assert params["visibility"] == "private"
+    assert params["push_only"] is False
+    assert params["readme_only"] is False
+    assert params["setup"] is False
+    assert params["no_setup"] is False
+    assert params["output"] is None
+    assert params["firmware"] is None
 
 
 @pytest.mark.parametrize(
@@ -36,30 +44,32 @@ def test_parser_defaults():
     ],
 )
 def test_flag_parity_table(argv, mode, visibility, push, readme):
-    args = build_parser().parse_args(argv)
-    assert args.mode == mode
-    assert args.visibility == visibility
-    assert args.push_only is push
-    assert args.readme_only is readme
+    params = _parsed(argv)
+    assert params["mode"] == mode
+    assert params["visibility"] == visibility
+    assert params["push_only"] is push
+    assert params["readme_only"] is readme
 
 
-def test_invalid_mode_rejected():
-    with pytest.raises(SystemExit):
-        build_parser().parse_args(["-m", "bogus"])
+@pytest.mark.parametrize("argv", [["-m", "bogus"], ["--bogus"]])
+def test_invalid_option_rejected(argv):
+    with pytest.raises(click.UsageError):
+        _parsed(argv)
 
 
 def test_missing_input_gates_error(monkeypatch):
-    """main() without firmware and without push/readme flags exits 1 before touching disk."""
+    """main() without firmware and without push/readme flags exits 1."""
+
+    def fake_build_config(**kw):
+        calls.append(kw)
+        return real_build_config(**kw)
+
     monkeypatch.setattr(cli, "bootstrap", lambda *a, **k: None)
-    calls = []
+    calls: list[dict] = []
     real_build_config = cli.build_config
-
-    def fake_build_config(*a, **k):
-        calls.append(k)
-        return real_build_config(*a, **k)
-
     monkeypatch.setattr(cli, "build_config", fake_build_config)
-    assert cli.main([]) == 1
+    monkeypatch.setattr(cli, "setup_complete", lambda: True)
+    assert cli.main(["--no-setup"]) == 1
     assert calls[0]["push_only"] is False and calls[0]["readme_only"] is False
 
 
@@ -92,7 +102,7 @@ def _setup(monkeypatch, tmp_path, mode_flags, *, readme_only=False):
             (),
             {
                 "paths": Paths(tmp_path, tmp_path / "input", tmp_path / "utils", out),
-                "settings": Settings(**kw),
+                "settings": Settings(**{k: v for k, v in kw.items() if k != "outdir"}),
                 "secrets": type("Sec", (), {"tg_token": "tok"}),
                 "log_level": "DEBUG",
             },
@@ -100,6 +110,7 @@ def _setup(monkeypatch, tmp_path, mode_flags, *, readme_only=False):
 
     monkeypatch.setattr(cli, "build_config", fake_config)
     monkeypatch.setattr(cli, "bootstrap", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "setup_complete", lambda: True)
     calls = []
     monkeypatch.setattr(cli, "run_pipeline", lambda ctx: calls.append("pipeline"))
     monkeypatch.setattr(cli, "resolve_source", lambda src, cfg: _Resolved("file", src))
@@ -113,7 +124,7 @@ def _setup(monkeypatch, tmp_path, mode_flags, *, readme_only=False):
 
 def test_readme_only_skips_pipeline(monkeypatch, tmp_path):
     calls = _setup(monkeypatch, tmp_path, ["-r"])
-    rc = cli.main(["-r"])
+    rc = cli.main(["-r", "--no-setup"])
     assert rc == 0
     assert "pipeline" not in calls  # extraction skipped
     assert calls == ["props", "readme"]
@@ -121,7 +132,7 @@ def test_readme_only_skips_pipeline(monkeypatch, tmp_path):
 
 def test_main_local_phase_order(monkeypatch, tmp_path):
     calls = _setup(monkeypatch, tmp_path, ["-m", "local"])
-    rc = cli.main(["-m", "local", str(tmp_path / "f.bin")])
+    rc = cli.main(["-m", "local", str(tmp_path / "f.bin"), "--no-setup"])
     assert rc == 0
     assert calls == ["pipeline", "props", "readme", "twrp"]
 
@@ -132,7 +143,7 @@ def test_main_gitlab_phase_order(monkeypatch, tmp_path):
     import dumprx.publishers as pubmod
 
     monkeypatch.setattr(pubmod, "publish", lambda config, info, branch: calls.append("publish") or "u")
-    rc = cli.main(["--gitlab", "--push-only"])
+    rc = cli.main(["--gitlab", "--push-only", "--no-setup"])
     assert rc == 0
     assert calls == ["props", "readme", "twrp", "publish", "notify"]
 
@@ -146,6 +157,71 @@ def test_main_publish_failure_returns_1(monkeypatch, tmp_path):
         raise RuntimeError("auth failed")
 
     monkeypatch.setattr(pubmod, "publish", boom)
-    rc = cli.main(["--gitlab", "--push-only"])
+    rc = cli.main(["--gitlab", "--push-only", "--no-setup"])
     assert rc == 1
     assert calls[-1] == "publish"
+
+
+def _readme_fake(o, info):
+    o.mkdir(parents=True, exist_ok=True)
+    (o / "README.md").write_text("ok\n", encoding="utf-8")
+    return o / "README.md"
+
+
+def test_output_flag_reaches_build_config(monkeypatch, tmp_path):
+    kw_calls: list[dict] = []
+    monkeypatch.setattr(cli, "bootstrap", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "setup_complete", lambda: True)
+    monkeypatch.setattr(cli, "_make_info", lambda config: _Info())
+    monkeypatch.setattr(cli, "write_readme", _readme_fake)
+
+    def fake_build_config(**kw):
+        kw_calls.append(kw)
+        from dumprx.config import Config, Paths, Settings
+
+        return Config(paths=Paths(tmp_path, tmp_path / "input", tmp_path / "utils"), settings=Settings(mode=kw["mode"]))
+
+    monkeypatch.setattr(cli, "build_config", fake_build_config)
+    assert cli.main(["-r", "--no-setup", "-o", str(tmp_path)]) == 0
+    assert kw_calls[0]["outdir"] == tmp_path
+
+    kw_calls.clear()
+    assert cli.main(["-r", "--no-setup"]) == 0
+    assert kw_calls[0]["outdir"] is None
+
+
+def test_push_only_with_output(monkeypatch, tmp_path):
+    kw_calls: list[dict] = []
+
+    def fake_build_config(**kw):
+        kw_calls.append(kw)
+        from dumprx.config import Config, Paths, Settings
+
+        return Config(
+            paths=Paths(tmp_path, tmp_path / "input", tmp_path / "utils"),
+            settings=Settings(**{k: v for k, v in kw.items() if k != "outdir"}),
+        )
+
+    monkeypatch.setattr(cli, "build_config", fake_build_config)
+    monkeypatch.setattr(cli, "bootstrap", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "setup_complete", lambda: True)
+    monkeypatch.setattr(cli, "_make_info", lambda config: _Info())
+    monkeypatch.setattr(cli, "write_readme", _readme_fake)
+    monkeypatch.setattr(cli, "generate_twrp", lambda *a, **k: None)
+    out = tmp_path / "dumps"
+    assert cli.main(["--push-only", "--no-setup", "-m", "local", "-o", str(out)]) == 0
+    assert kw_calls[0]["outdir"] == out
+    assert kw_calls[0]["push_only"] is True
+
+
+def test_help_exits_zero():
+    from click.testing import CliRunner
+
+    runner = CliRunner()
+    result = runner.invoke(cli_cmd, ["--help"])
+    assert result.exit_code == 0
+    assert "--setup" in result.output
+    assert "--no-setup" in result.output
+    assert "--output" in result.output
+    assert "Mode" in result.output
+    assert "Setup" in result.output

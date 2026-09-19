@@ -28,21 +28,28 @@ This toolkit can run in any Debian/Ubuntu distribution, Ubuntu Bionic and Focal 
 
 Support for Alpine Linux is added and tested. You can give it a try.
 
-For any other UNIX Distributions, please refer to internal [Setup File](setup.sh) and install the required programs via their own package manager.
+For any other UNIX Distributions, the internal setup routine detects the package manager and installs the required programs via its own package manager.
 
 ## Prepare toolkit dependencies / requirements
 
 DumprX is a Python package managed with [uv](https://docs.astral.sh/uv/).
-Initial setup is a two-step process:
+Setup is a single step:
 
-1. Install system-level binaries (7zz, simg2img, aria2c, etc.) once via [Setup File](setup.sh):
-   ```bash
-   ./setup.sh
-   ```
-2. Install the Python tool with uv:
-   ```bash
-   uv sync
-   ```
+```bash
+uv run dumprx --setup
+```
+
+`--setup` installs system-level binaries (7zz, simg2img, aria2c, etc.), the
+`uv` tool, runtime helper tools, and Python dependencies. It records a state
+file on success. On any later run without `--setup`, DumprX re-runs setup
+automatically if that state file is missing or incomplete. Use `--no-setup`
+to skip that auto-run (for scripts/CI).
+
+To install the Python tool with uv only:
+
+```bash
+uv sync
+```
 
 ## Usage
 
@@ -58,6 +65,9 @@ Useful flags:
 uv run dumprx --local firmware.bin          # extract + README, no push (recommended first run)
 uv run dumprx --readme-only                 # regenerate README.md from existing OUTDIR
 uv run dumprx --push-only 'link-or-folder'  # skip extraction, push existing OUTDIR
+uv run dumprx -o /data/dumps firmware.bin   # write output under /data/dumps instead of /tmp/out
+uv run dumprx --setup                       # install prerequisites and record setup state
+uv run dumprx --no-setup firmware.bin       # skip the auto-run setup check
 uv run dumprx --github --public firmware.bin
 uv run dumprx --help
 ```

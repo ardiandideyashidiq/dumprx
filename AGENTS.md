@@ -25,34 +25,38 @@ binaries/scripts still live under `utils/`.
 
 ```bash
 uv sync                                    # install deps
+uv run dumprx --setup                      # install system deps + tools, record setup state
 uv run dumprx --help                       # CLI help
 uv run dumprx --local <firmware-file-or-url>   # run locally without GitLab push
 uv run dumprx --readme-only                # regenerate README.md only
+uv run dumprx -o <dir> --local <firmware-file-or-url>  # dump into <dir> instead of /tmp/out
 uv run dumprx --gitlab <firmware-file-or-url>
 uv run dumprx --gitlab --public <firmware-file-or-url>
 uv run pytest                              # full test suite
 uv run ruff check src/dumprx tests         # lint
-bash -n setup.sh                           # setup.sh is still Bash
 ```
 
 Mode defaults to `gitlab` and visibility to `private` (mirrors the legacy
-Bash dumper defaults). Verify actual code in `cli.py` before changing behavior.
+Bash dumper defaults). First run without `--setup` auto-runs setup when the
+XDG state file (`~/.local/state/dumprx/state.json`) is missing/incomplete;
+`--no-setup` bypasses that check. Verify actual code in `cli.py` before
+changing behavior.
 
 ## Repository Structure
 
 ```text
 DumprX/
 ├── pyproject.toml          # package + deps; [project.scripts] dumprx = dumprx.cli:main
-├── setup.sh                # system dependency installer (Bash, apt/dnf/pacman/apk/brew)
 ├── .dumprxenv.example      # template for GitLab/GitHub/Telegram settings
 ├── .dumprxenv              # local secrets file; gitignored; never commit
 ├── README.md
 ├── LICENSE
 ├── src/
 │   └── dumprx/
-│       ├── cli.py          # argparse entry point; wires pipeline -> props -> readme -> twrp -> publisher -> notify
+│       ├── cli.py          # click/rich-click entry point; wires setup gate -> pipeline -> props -> readme -> twrp -> publisher -> notify
 │       ├── pipeline.py     # stage queue (containers re-queue, terminals break), partition promote, finalize
 │       ├── config.py       # Paths/Settings/Secrets frozen dataclasses; .dumprxenv parsing
+│       ├── setup.py        # first-run setup: system packages, uv, runtime clones, XDG state gate
 │       ├── logger.py       # loguru bootstrap (console + rotating file)
 │       ├── process.py      # run() subprocess wrapper with capture/timeout
 │       ├── tools.py        # Tool registry / resolution for utils/bin helpers
@@ -101,6 +105,9 @@ Options:
   -b, --github                Shortcut for --mode github
   -l, --local                 Shortcut for --mode local
       --public                Create repo as public; default is private
+      --setup                 Run setup and exit (first-run auto-runs it)
+      --no-setup              Skip the auto-run setup check
+  -o, --output <dir>          Dump output directory (default: /tmp/out)
   -h, --help                  Show help
 ```
 
@@ -219,7 +226,7 @@ Before finishing a code change:
 - [ ] `uv run ruff check src/dumprx tests` passes
 - [ ] `uv run pytest` passes
 - [ ] Help text updated if CLI flags changed (`cli.py` usage + README)
-- [ ] `setup.sh` updated if system dependencies changed
+- [ ] `src/dumprx/setup.py` updated if system dependencies changed
 - [ ] `pyproject.toml` + `uv.lock` updated if Python deps changed
 - [ ] `.dumprxenv.example` updated if env vars changed
 - [ ] README/AGENTS updated if behavior or workflow changed
