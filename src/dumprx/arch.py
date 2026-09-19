@@ -48,6 +48,7 @@ class Archive:
             return
         yield from ()
 
+    @property
     def member_names(self) -> list[str]:
         """Last whitespace-token of each non-empty entry line, like `gawk $NF`."""
         names: list[str] = []

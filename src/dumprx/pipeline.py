@@ -26,7 +26,6 @@ from dumprx.images import strip_signed_header, to_raw_image
 from dumprx.partitions import (
     extract_euclid_imgs,
     extract_fs_partitions,
-    remove_leftover_images,
 )
 
 
@@ -155,10 +154,10 @@ def write_all_files(outdir: Path) -> None:
 
 def fix_permissions(outdir: Path) -> None:
     for p in outdir.rglob("*"):
-        if p.is_file():
+        if p.is_file() and not p.is_symlink():
             os.chmod(p, p.stat().st_mode | 0o600)
     for p in outdir.rglob("*"):
-        if p.is_dir():
+        if p.is_dir() and not p.is_symlink():
             os.chmod(p, p.stat().st_mode | 0o700)
 
 
@@ -179,7 +178,6 @@ def finalize(ctx: WorkContext, partitions: list[str]) -> PipelineResult:
     if supers:
         logger.info("super chunks identified: {}", supers)
     extract_euclid_imgs(ctx.outdir, ctx.tools)
-    remove_leftover_images(ctx.outdir)
     extracted = extract_fs_partitions(ctx.outdir, partitions, ctx.tools)
     remove_sys_journals(ctx.outdir)
     fix_permissions(ctx.outdir)

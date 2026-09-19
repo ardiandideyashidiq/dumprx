@@ -75,7 +75,7 @@ def test_listing_file_backed(tmp_path, monkeypatch):
     assert listing_file.is_file()
 
     arc2 = Archive(tmp_path / "fw.zip", listing_file=listing_file)
-    assert arc2.member_names() == ["system.img", "dir/vendor.img"]
+    assert arc2.member_names == ["system.img", "dir/vendor.img"]
     assert arc2.has("vendor")
     assert arc2.matched_names("system") == ["system.img"]
 

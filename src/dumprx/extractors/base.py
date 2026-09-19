@@ -117,8 +117,20 @@ def ordered() -> list[Extractor]:
     return sorted(_REGISTRY, key=lambda e: (0 if e.kind == "container" else 1, e.order))
 
 
+_LOADED = False
+
+
+def _ensure_loaded() -> None:
+    """Register every extractor submodule once before first classification."""
+    global _LOADED
+    if not _LOADED:
+        load_extractors()
+        _LOADED = True
+
+
 def classify(ctx: WorkContext) -> Extractor:
     """First registered extractor whose detect() succeeds (containers first)."""
+    _ensure_loaded()
     for extractor_ in ordered():
         try:
             if extractor_.detect(ctx):

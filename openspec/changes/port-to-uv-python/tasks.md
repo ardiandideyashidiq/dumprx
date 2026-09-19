@@ -79,4 +79,4 @@
 
 - [x] 14.1 Update README + AGENTS.md: `uv run dumprx` usage, CLI examples replaced, port notes, `setup.sh` role trimmed to system deps; `README.md`, `AGENTS.md`, `.dumprxenv.example` verified to contain no runnable `dumper.sh` references
 - [x] 14.2 Remove `dumper.sh` from the repo (entry point fully replaced — user-approved) and update `.dumprxenv.example` with `DUMPRX_JOBS`/`DUMPRX_LOG_LEVEL`; `uv run dumprx --help` smoke run passes after removal
-- [ ] 14.3 Final gate: `uv run ruff check src tests`, `uv run pytest`, `bash -n setup.sh`, and a real local dump (`--local`) all pass; verify exit codes and log file presence in work dir
+- [x] 14.3 Final gate: `uv run ruff check src tests`, `uv run pytest`, `bash -n setup.sh`, and a real local dump (`--local`) all pass; verify exit codes and log file presence in work dir. Ran on `R5-itel-Power-55-P661N-20.zip` (EXIT=0, dump at `/tmp/out`, README + 8118-line `all_files.txt`).`

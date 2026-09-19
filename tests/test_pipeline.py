@@ -201,6 +201,14 @@ def test_fix_permissions_sets_readable(tmp_path):
     assert (tmp_path / "d").stat().st_mode & 0o700
 
 
+def test_fix_permissions_skips_symlinks(tmp_path):
+    target = tmp_path / "target"
+    target.write_text("t")
+    (tmp_path / "link").symlink_to(target)
+    target.chmod(0o400)  # would raise EPERM if chmod followed the link
+    fix_permissions(tmp_path)  # must not raise
+
+
 def test_promote_partitions_moves_and_converts(tmp_path, monkeypatch):
     ctx = _ctx(tmp_path)
     work, out = ctx.workdir, ctx.outdir

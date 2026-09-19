@@ -23,16 +23,16 @@ BOOT_KEEP = ("boot", "recovery", "dtbo", "tz", "vbmeta")
 def extract_fs_partition(root: Path, name: str, tools: Tools) -> bool:
     img = root / f"{name}.img"
     part_dir = root / name
-    part_dir.mkdir(exist_ok=True)
-
-    fsck = tools["fsck.erofs"]
-    if fsck is not None and run([str(fsck), f"--extract={name}", str(img)]).ok:
-        img.unlink(missing_ok=True)
-        return True
 
     # modem is raw (not a filesystem) — leave the .img as-is on erofs failure
     if name == "modem" or not img.is_file():
         return False
+    part_dir.mkdir(exist_ok=True)
+
+    fsck = tools["fsck.erofs"]
+    if fsck is not None and run([str(fsck), f"--extract={part_dir}", str(img)]).ok:
+        img.unlink(missing_ok=True)
+        return True
 
     for p in part_dir.iterdir():
         if p.is_dir():
@@ -150,12 +150,6 @@ def _dedupe_path(base: Path, name: str) -> Path:
     return final
 
 
-def remove_leftover_images(outdir: Path) -> None:
-    for img in outdir.glob("*.img"):
-        if img.name.split(".")[0] not in BOOT_KEEP:
-            img.unlink(missing_ok=True)
-
-
 def extract_euclid_imgs(outdir: Path, tools: Tools) -> None:
     """7zz-extract *.img blobs inside Oppo euclid dirs (props source)."""
     zz = tools.seven_zz
@@ -180,5 +174,4 @@ __all__ = [
     "extract_fs_partition",
     "extract_fs_partitions",
     "identify_super_chunks",
-    "remove_leftover_images",
 ]

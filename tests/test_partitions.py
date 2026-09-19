@@ -10,7 +10,6 @@ from dumprx.partitions import (
     extract_fs_partition,
     extract_fs_partitions,
     identify_super_chunks,
-    remove_leftover_images,
 )
 from dumprx.tools import Tools
 
@@ -40,7 +39,7 @@ def test_fsck_success_removes_img(tmp_path, monkeypatch):
     _patch_run(monkeypatch, lambda argv: (calls.append(argv) or _res(True)))
     assert extract_fs_partition(tmp_path, "system", _tools(tmp_path)) is True
     assert not img.exists()
-    assert "--extract=system" in calls[0]
+    assert f"--extract={tmp_path}/system" in calls[0]
 
 
 def test_modem_exempt_keeps_img(tmp_path, monkeypatch):
@@ -107,15 +106,6 @@ def test_identify_duplicate_claim(tmp_path, monkeypatch):
     identify_super_chunks(tmp_path, _tools(tmp_path))
     assert (tmp_path / "odm").is_dir()
     assert (tmp_path / "odm_2").is_dir()
-
-
-def test_remove_leftover_images(tmp_path):
-    for name in ("boot", "recovery", "dtbo", "tz", "vbmeta"):
-        (tmp_path / f"{name}.img").write_text("keep")
-    (tmp_path / "system.img").write_text("drop")
-    remove_leftover_images(tmp_path)
-    assert not (tmp_path / "system.img").exists()
-    assert (tmp_path / "vbmeta.img").exists()
 
 
 def test_euclid_extract(tmp_path, monkeypatch):

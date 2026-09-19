@@ -65,6 +65,21 @@ def test_classify_no_match_lists_candidates(tmp_path):
     assert "ozip" in str(exc.value)
 
 
+def test_classify_loads_registry_on_demand(tmp_path):
+    """Regression: classify must register extractor modules if prod never loaded them."""
+    import dumprx.extractors.base as base
+
+    base._LOADED = False  # simulate a prod process that never called load_extractors()
+    try:
+        with pytest.raises(ClassifyError) as exc:
+            classify(_ctx(tmp_path, "mystery.xyz"))
+        assert "no extractor matched" in str(exc.value)
+        assert base.ordered(), "registry should be populated"
+        assert base._LOADED is True  # classify flipped the guard
+    finally:
+        base._LOADED = False  # restore for later tests (registry already populated)
+
+
 def test_ozip_magic_detects(tmp_path):
     ctx = _ctx(tmp_path, "f.bin")
     ctx.source.write_bytes(b"OPPOENCRYPT!")
