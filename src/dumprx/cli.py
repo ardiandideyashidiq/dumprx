@@ -180,7 +180,7 @@ def cli(
         logger.info("README.md generated. Skipping Tree generation & Pushing.")
         return 0
 
-    generate_twrp(config, is_ab=info.is_ab == "true")
+    generate_twrp(config)
 
     branch = init_repo(config.paths.outdir, info.branch, fallback_branch=info.incremental)
     try:

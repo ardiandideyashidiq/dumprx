@@ -1,4 +1,4 @@
-"""TWRP device tree generation (twrpdtgen run + wiki README fetch)."""
+"""TWRP device tree generation (vendored twrpdtgen DeviceTree + wiki README fetch)."""
 
 from __future__ import annotations
 
@@ -7,43 +7,45 @@ from pathlib import Path
 
 from loguru import logger
 
-from dumprx.process import run
+from dumprx.tools import Tools
+from twrpdtgen.device_tree import DeviceTree
 
-_TWRPDTGEN = "uvx --from git+https://github.com/twrpdtgen/twrpdtgen@master twrpdtgen"
 _WIKI_README = (
     "https://raw.githubusercontent.com/wiki/SebaUbuntu/TWRP-device-tree-generator/"
     "4.-Build-TWRP-from-source.md"
 )
 
-
-def _render_img(outdir: Path, img: str) -> bool:
-    result = run([*_TWRPDTGEN.split(), img, "-o", str(outdir)], timeout=600)
-    return result.ok
+# Candidates in twrpdtgen priority order (best ambiguity for TWRP first).
+IMAGE_CANDIDATES = ("recovery.img", "vendor_boot.img", "init_boot.img", "boot.img")
 
 
-def generate(config, is_ab: bool = False) -> None:
-    """Mirror bash 1413-1436: pick recovery/vendor_boot, run twrpdtgen, fetch wiki."""
+def generate(config) -> None:
+    """Feed the OUTDIR boot-image set to the vendored DeviceTree, best-effort."""
     outdir = config.paths.outdir
-
-    img = "recovery.img"
-    if is_ab:
-        if (outdir / "recovery.img").is_file():
-            img = "recovery.img"
-            logger.info("legacy A/B with recovery partition detected")
-        else:
-            img = "vendor_boot.img"
-
-    twrp_out = outdir / "twrp-device-tree"
-    if not (outdir / img).is_file():
+    images = [outdir / name for name in IMAGE_CANDIDATES if (outdir / name).is_file()]
+    if not images:
         return
 
-    twrp_out.mkdir(parents=True, exist_ok=True)
-    if _render_img(twrp_out, img):
-        _fetch_wiki_readme(twrp_out)
-    elif (outdir / "vendor_boot.img").is_file():
-        if _render_img(twrp_out, "vendor_boot.img"):
-            _fetch_wiki_readme(twrp_out)
+    unpack_bootimg = Tools(utilsdir=config.paths.utilsdir)["unpack_bootimg"]
+    if unpack_bootimg is None:
+        logger.warning("unpack_bootimg not found in utils/bin; skipping TWRP tree")
+        return
 
+    twrp_out = outdir / "twrp-device-tree"
+    dtbo = outdir / "dtbo.img" if (outdir / "dtbo.img").is_file() else None
+    try:
+        tree = DeviceTree(
+            images=images,
+            unpack_bootimg_tool=unpack_bootimg,
+            workdir=config.paths.workdir,
+            dtbo=dtbo,
+        )
+        tree.dump_to_folder(twrp_out)
+    except Exception as exc:  # noqa: BLE001 - TWRP tree is best-effort
+        logger.warning("TWRP device tree generation skipped: {}", exc)
+        return
+
+    _fetch_wiki_readme(twrp_out)
     _rm_dotgit(twrp_out)
 
 
@@ -51,6 +53,8 @@ def _fetch_wiki_readme(outdir: Path) -> None:
     target = outdir / "README.md"
     if target.is_file():
         return
+    from dumprx.process import run
+
     result = run(["curl", "-s", _WIKI_README, "-o", str(target)], timeout=120)
     if not result.ok:
         logger.warning("TWRP wiki README fetch failed (rc={})", result.returncode)

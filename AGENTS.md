@@ -19,7 +19,7 @@ binaries/scripts still live under `utils/`.
 - Keep compatibility with the existing style: dataclasses, loguru `logger`, `run()` from `dumprx.process` for subprocesses, `Path` objects everywhere.
 - Do not commit or print secrets from `.dumprxenv`. `Secrets.__repr__` redacts everything.
 - Do not add new runtime dependencies without updating `pyproject.toml` and documenting why. `uv lock` after dependency changes.
-- Validate changes with at least `uv run ruff check src/dumprx tests` and `uv run pytest`. There is no formal firmware test suite; firmware validation is usually manual (`--local` on a real file).
+- Validate changes with at least `uv run ruff check src/dumprx src/twrpdtgen tests` and `uv run pytest`. There is no formal firmware test suite; firmware validation is usually manual (`--local` on a real file).
 
 ## Important Commands
 
@@ -33,7 +33,7 @@ uv run dumprx -o <dir> --local <firmware-file-or-url>  # dump into <dir> instead
 uv run dumprx --gitlab <firmware-file-or-url>
 uv run dumprx --gitlab --public <firmware-file-or-url>
 uv run pytest                              # full test suite
-uv run ruff check src/dumprx tests         # lint
+uv run ruff check src/dumprx src/twrpdtgen tests   # lint
 ```
 
 Mode defaults to `gitlab` and visibility to `private` (mirrors the legacy
@@ -52,33 +52,53 @@ DumprX/
 ├── README.md
 ├── LICENSE
 ├── src/
-│   └── dumprx/
-│       ├── cli.py          # click/rich-click entry point; wires setup gate -> pipeline -> props -> readme -> twrp -> publisher -> notify
-│       ├── pipeline.py     # stage queue (containers re-queue, terminals break), partition promote, finalize
-│       ├── config.py       # Paths/Settings/Secrets frozen dataclasses; .dumprxenv parsing
-│       ├── setup.py        # first-run setup: system packages, uv, runtime clones, XDG state gate
-│       ├── logger.py       # loguru bootstrap (console + rotating file)
-│       ├── process.py      # run() subprocess wrapper with capture/timeout
-│       ├── tools.py        # Tool registry / resolution for utils/bin helpers
-│       ├── arch.py         # 7zz listing + extraction helpers
-│       ├── downloader.py   # URL hoster dispatch (mega/mediafire/gdrive/afh/we.tl/direct)
-│       ├── resolution.py   # input folder/file normalization
-│       ├── images.py       # sparse/raw conversion, signed header stripping
-│       ├── partitions.py   # super chunks, euclid, FS filesystem extraction
-│       ├── boot.py         # boot/recovery/vendor_boot/dtbo, kernel metadata
-│       ├── readme.py       # README dump card + Telegram HTML builder
-│       ├── notify.py       # Telegram send (failure tolerated)
-│       ├── twrp.py         # twrpdtgen + wiki README fetch
-│       ├── extractors/     # registry (base.py) + containers.py + terminals.py + super.py
-│       ├── props/          # propper (PropStore/grep), models (FirmwareInfo.derive), board_info
-│       └── publishers/     # base (retry_push/LFS/commit_and_push), gitlab, github, registry
-└── utils/
-    ├── bin/                # Prebuilt tools: 7zz, simg2img, magiskboot, payload-dumper-go, etc.
-    ├── downloaders/        # URL download helpers
-    ├── kdztools/           # LG KDZ/DZ extraction helpers
-    ├── keyfiles/           # Decryption keys for OFP/OPS flows
-    └── ...                 # sdat2img.py, avbtool.py, unpackboot.sh, dtc, unsin, lpunpack, nb0-extract, ...
-```
+ │   ├── dumprx/
+ │   │   ├── cli.py          # click/rich-click entry point; wires setup gate -> pipeline -> props -> readme -> twrp -> publisher -> notify
+ │   │   ├── pipeline.py     # stage queue (containers re-queue, terminals break), partition promote, finalize
+ │   │   ├── config.py       # Paths/Settings/Secrets frozen dataclasses; .dumprxenv parsing
+ │   │   ├── setup.py        # first-run setup: system packages, uv, runtime clones, XDG state gate
+ │   │   ├── logger.py       # loguru bootstrap (console + rotating file)
+ │   │   ├── process.py      # run() subprocess wrapper with capture/timeout
+ │   │   ├── tools.py        # Tool registry / resolution for utils/bin helpers
+ │   │   ├── arch.py         # 7zz listing + extraction helpers
+ │   │   ├── downloader.py   # URL hoster dispatch (mega/mediafire/gdrive/afh/we.tl/direct)
+ │   │   ├── resolution.py   # input folder/file normalization
+ │   │   ├── images.py       # sparse/raw conversion, signed header stripping
+ │   │   ├── partitions.py   # super chunks, euclid, FS filesystem extraction
+ │   │   ├── boot.py         # boot/recovery/vendor_boot/dtbo, kernel metadata
+ │   │   ├── readme.py       # README dump card + Telegram HTML builder
+ │   │   ├── notify.py       # Telegram send (failure tolerated)
+ │   │   ├── twrp.py         # vendored twrpdtgen DeviceTree (adaptive image set) + wiki README fetch
+ │   │   ├── extractors/     # registry (base.py) + containers.py + terminals.py + super.py
+ │   │   ├── props/          # propper (PropStore/grep), models (FirmwareInfo.derive), board_info
+ │   │   └── publishers/     # base (retry_push/LFS/commit_and_push), gitlab, github, registry
+ │   └── twrpdtgen/          # vendored twrpdtgen fork; DeviceTree lib, image_info (AOSP mkbootimg unpack), templates
+ └── utils/
+     ├── bin/                # Prebuilt tools: 7zz, simg2img, magiskboot; AOSP mkbootimg.py/unpack_bootimg.py + gki/
+     ├── downloaders/        # URL download helpers
+     ├── kdztools/           # LG KDZ/DZ extraction helpers
+     ├── keyfiles/           # Decryption keys for OFP/OPS flows
+     └── ...                 # sdat2img.py, avbtool.py, unpackboot.sh, dtc, unsin, lpunpack, nb0-extract, ...
+ ```
+
+ ## Vendored code
+
+ Vendored components are committed intentionally and must not be treated as
+ runtime clones:
+
+ - `src/twrpdtgen/` — vendored from `ardiandideyashidiq/twrpdtgen` master
+   (commit `bd0badbe8e3e6eff96837f4da2a7d22a37de5094`). The fork ships its own
+   scripts here that replace AIK: `image_info.py` runs `utils/bin/unpack_bootimg.py`
+   (`--format=mkbootimg`) and decompresses the ramdisk with gzip/lzma/lz4/zstd +
+   `cpio`. Adaptive selection order is `recovery.img` > `vendor_boot.img` >
+   `init_boot.img` > `boot.img`. To update: re-apply the dumprx-side changes
+   (no git flow, loguru logging, `image_info.py` unpacker, `labels`-free
+   `DeviceTree`) on top of a newer fork checkout and bump the commit above in
+   both `src/twrpdtgen/__init__.py` and this section.
+ - `utils/bin/mkbootimg.py` + `utils/bin/unpack_bootimg.py` + `utils/bin/gki/` —
+vendored AOSP `platform/system/tools/mkbootimg` scripts (Apache-2.0).
+    `unpack_bootimg` is a runtime tool (`tools.py` entry `unpack_bootimg`);
+    `mkbootimg` is kept for building boot-image fixtures.
 
 ## Runtime Tooling
 
@@ -207,7 +227,7 @@ partitions:
   fakes; `Result` is a plain dataclass with `.ok`, `.stdout_text`.
 - `Path.write_bytes`/`write_text` return int in Python 3.13 — never use them in
   `or`-chains that must return truthy booleans.
-- Suite is green when `uv run ruff check src/dumprx tests` and
+- Suite is green when `uv run ruff check src/dumprx src/twrpdtgen tests` and
   `uv run pytest` both pass.
 
 ## Secrets and Generated Files
@@ -227,7 +247,7 @@ Before finishing a code change:
 
 - [ ] `git status --short` checked for unrelated changes
 - [ ] Relevant module(s) read before editing
-- [ ] `uv run ruff check src/dumprx tests` passes
+- [ ] `uv run ruff check src/dumprx src/twrpdtgen tests` passes
 - [ ] `uv run pytest` passes
 - [ ] Help text updated if CLI flags changed (`cli.py` usage + README)
 - [ ] `src/dumprx/setup.py` updated if system dependencies changed

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from dumprx.config import Secrets, build_config
 from dumprx.notify import send_tg_html
 from dumprx.props.models import FirmwareInfo
@@ -92,7 +94,7 @@ def test_send_tg_html_failure_tolerated(monkeypatch):
     assert len(calls) == 1  # failure not retried
 
 
-def test_twrp_generate_legacy_ab_prefers_recovery(monkeypatch, tmp_path):
+def test_twrp_generate_legacy_prefers_recovery_then_boot(monkeypatch, tmp_path):
     from dumprx import twrp
     from dumprx.config import Paths
 
@@ -100,21 +102,31 @@ def test_twrp_generate_legacy_ab_prefers_recovery(monkeypatch, tmp_path):
         Paths(
             project_dir=tmp_path,
             inputdir=tmp_path / "input",
-            utilsdir=tmp_path / "utils",
+            utilsdir=tmp_path,
             outdir=tmp_path,
         )
     )
-    (tmp_path / "vendor_boot.img").write_bytes(b"\x00" * 8)
     (tmp_path / "recovery.img").write_bytes(b"\x00" * 8)
-    rendered = []
-    monkeypatch.setattr(twrp, "_render_img", lambda out, img: rendered.append(img) or True)
+    (tmp_path / "boot.img").write_bytes(b"\x00" * 8)
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "unpack_bootimg.py").touch()
+    images_seen = []
+
+    class StubTree:
+        def __init__(self, **kwargs):
+            images_seen.extend(kwargs["images"])
+
+        def dump_to_folder(self, out: Path) -> None:
+            out.mkdir(parents=True)
+
+    monkeypatch.setattr(twrp, "DeviceTree", StubTree)
     monkeypatch.setattr(twrp, "_fetch_wiki_readme", lambda out: None)
-    twrp.generate(cfg, is_ab=True)
-    assert rendered == ["recovery.img"]
+    twrp.generate(cfg)
+    assert images_seen == [tmp_path / "recovery.img", tmp_path / "boot.img"]
     assert (tmp_path / "twrp-device-tree").is_dir()
 
 
-def test_twrp_generate_ab_without_recovery_uses_vendor_boot(monkeypatch, tmp_path):
+def test_twrp_generate_gki_picks_vendor_and_init_boot(monkeypatch, tmp_path):
     from dumprx import twrp
     from dumprx.config import Paths
 
@@ -122,19 +134,37 @@ def test_twrp_generate_ab_without_recovery_uses_vendor_boot(monkeypatch, tmp_pat
         Paths(
             project_dir=tmp_path,
             inputdir=tmp_path / "input",
-            utilsdir=tmp_path / "utils",
+            utilsdir=tmp_path,
             outdir=tmp_path,
         )
     )
     (tmp_path / "vendor_boot.img").write_bytes(b"\x00" * 8)
-    rendered = []
-    monkeypatch.setattr(twrp, "_render_img", lambda out, img: rendered.append(img) or True)
+    (tmp_path / "init_boot.img").write_bytes(b"\x00" * 8)
+    (tmp_path / "boot.img").write_bytes(b"\x00" * 8)
+    (tmp_path / "dtbo.img").write_bytes(b"\x00" * 8)
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "unpack_bootimg.py").touch()
+    received = {}
+
+    class StubTree:
+        def __init__(self, **kwargs):
+            received.update(kwargs)
+
+        def dump_to_folder(self, out: Path) -> None:
+            out.mkdir(parents=True)
+
+    monkeypatch.setattr(twrp, "DeviceTree", StubTree)
     monkeypatch.setattr(twrp, "_fetch_wiki_readme", lambda out: None)
-    twrp.generate(cfg, is_ab=True)
-    assert rendered == ["vendor_boot.img"]
+    twrp.generate(cfg)
+    assert received["images"] == [
+        tmp_path / "vendor_boot.img",
+        tmp_path / "init_boot.img",
+        tmp_path / "boot.img",
+    ]
+    assert received["dtbo"] == tmp_path / "dtbo.img"
 
 
-def test_twrp_generate_not_ab_skips_without_recovery(monkeypatch, tmp_path):
+def test_twrp_generate_skips_without_any_image(monkeypatch, tmp_path):
     from dumprx import twrp
     from dumprx.config import Paths
 
@@ -142,14 +172,42 @@ def test_twrp_generate_not_ab_skips_without_recovery(monkeypatch, tmp_path):
         Paths(
             project_dir=tmp_path,
             inputdir=tmp_path / "input",
-            utilsdir=tmp_path / "utils",
+            utilsdir=tmp_path,
             outdir=tmp_path,
         )
     )
-    monkeypatch.setattr(twrp, "_render_img", lambda out, img: _fail())
-    twrp.generate(cfg, is_ab=False)
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("DeviceTree must not be called")
+
+    monkeypatch.setattr(twrp, "DeviceTree", fail)
+    twrp.generate(cfg)
     assert not (tmp_path / "twrp-device-tree").exists()
 
 
-def _fail():
-    raise AssertionError("_render_img must not be called")
+def test_twrp_generate_failure_is_best_effort(monkeypatch, tmp_path):
+    from dumprx import twrp
+    from dumprx.config import Paths
+
+    cfg = build_config(mode="local").with_paths(
+        Paths(
+            project_dir=tmp_path,
+            inputdir=tmp_path / "input",
+            utilsdir=tmp_path,
+            outdir=tmp_path,
+        )
+    )
+    (tmp_path / "boot.img").write_bytes(b"\x00" * 8)
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "unpack_bootimg.py").touch()
+
+    class BrokenTree:
+        def __init__(self, **kwargs):
+            pass
+
+        def dump_to_folder(self, out):
+            raise AssertionError("no ramdisk")
+
+    monkeypatch.setattr(twrp, "DeviceTree", BrokenTree)
+    twrp.generate(cfg)
+    assert not (tmp_path / "twrp-device-tree").exists()

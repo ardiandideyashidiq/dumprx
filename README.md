@@ -198,4 +198,7 @@ Credit for those tools goes to everyone whosoever worked hard to put all those p
   - From within linux's source code by @torvalds
 - unpackboot.sh (bootimg and ramdisk extractor, modified shell script)
   - Originally by @xiaolu and @carlitros900, stripped to unpack functionallity, by me @rokibhasansagar
-- twrpdtgen by @SebaUbuntu
+- twrpdtgen (TWRP device tree generator, vendored fork)
+  - by @SebastianoBarezzi / @ardiandideyashidiq, from [ardiandideyashidiq/twrpdtgen](https://github.com/ardiandideyashidiq/twrpdtgen) (commit `bd0badbe8e3e6eff96837f4da2a7d22a37de5094`)
+- mkbootimg.py and unpack_bootimg.py (AOSP boot image pack/unpack scripts, Apache-2.0)
+  - from [platform/system/tools/mkbootimg](https://android.googlesource.com/platform/system/tools/mkbootimg)

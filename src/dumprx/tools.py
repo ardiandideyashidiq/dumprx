@@ -42,6 +42,8 @@ TOOL_MAP = {
     "ruu_decrypt": "RUU_Decrypt_Tool",
     "extract-ikconfig": "extract-ikconfig",
     "unpackboot": "unpackboot.sh",
+    "mkbootimg": "bin/mkbootimg.py",
+    "unpack_bootimg": "bin/unpack_bootimg.py",
     "aml_extract": "aml-upgrade-package-extract",
     "afptool": "bin/afptool",
     "rkImageMaker": "bin/rkImageMaker",
