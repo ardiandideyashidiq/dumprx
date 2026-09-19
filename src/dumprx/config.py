@@ -146,6 +146,7 @@ class Settings:
     visibility: str = "private"
     push_only: bool = False
     readme_only: bool = False
+    force: bool = False
     jobs: int = 4
     log_level: str = "DEBUG"
 
@@ -175,6 +176,7 @@ def build_config(
     visibility: str = "private",
     push_only: bool = False,
     readme_only: bool = False,
+    force: bool = False,
     jobs: int | None = None,
     log_level: str | None = None,
     outdir: Path | None = None,
@@ -209,6 +211,7 @@ def build_config(
         visibility=visibility,
         push_only=push_only,
         readme_only=readme_only,
+        force=force,
         jobs=jobs or _int_env("DUMPRX_JOBS", _nproc()),
         log_level=(log_level or _log_level()),
     )

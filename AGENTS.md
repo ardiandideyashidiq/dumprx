@@ -108,6 +108,7 @@ Options:
       --setup                 Run setup and exit (first-run auto-runs it)
       --no-setup              Skip the auto-run setup check
   -o, --output <dir>          Dump output directory (default: /tmp/out)
+  -f, --force                 Re-dump even if already dumped on this machine
   -h, --help                  Show help
 ```
 
@@ -124,6 +125,7 @@ suffix and the original casing preserved (e.g. `Infinix-X6878_dump`) under
 | `config.Paths` | `project_dir`, `inputdir`, `utilsdir`, `outdir` (default `/tmp/out`), `workdir` (`outdir/tmp`) |
 | `config.Settings.mode` | `local`, `gitlab`, or `github` output behavior |
 | `config.Secrets` | Credentials from `.dumprxenv`; repr/str redacted |
+| `redundancy` | Input sha256 ledger (XDG `~/.local/state/dumprx/dumps.json`); a ledger hit bails before extraction, `-f` overrides, entries recorded only after a dump fully succeeds |
 | `WorkContext` | source path, outdir/workdir, config, archive listing passed to extractors |
 | `extractors/base.py` | ordered registry; `classify(ctx)` first-match; containers return next source, terminals None |
 | `props/models.derive()` | full property cascade against an extracted tree -> `FirmwareInfo` |

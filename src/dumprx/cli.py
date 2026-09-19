@@ -23,6 +23,7 @@ from dumprx.props.models import FirmwareInfo, derive
 from dumprx.props.propper import PropStore
 from dumprx.publishers.base import commit_local, init_repo
 from dumprx.readme import build_tg_html, write_readme
+from dumprx.redundancy import lookup, record, sha256_stream
 from dumprx.resolution import ResolutionError, resolve_source
 from dumprx.setup import run_setup, setup_complete
 from dumprx.tools import Tools
@@ -86,6 +87,14 @@ class PropError(RuntimeError):
     default=None,
     help="Dump output directory (default: /tmp/out)",
 )
+@click.option(
+    "-f",
+    "--force",
+    "force",
+    is_flag=True,
+    default=False,
+    help="Re-dump even if this firmware was already dumped on this machine",
+)
 @click.option_panel("Mode", options=["-m", "--gitlab", "--github", "--local", "--public"])
 @click.option_panel("Setup", options=["--setup", "--no-setup"])
 @click.option_panel("Pipeline", options=["--push-only", "--readme-only"])
@@ -99,6 +108,7 @@ def cli(
     setup: bool,
     no_setup: bool,
     output: Path | None,
+    force: bool,
 ) -> int:
     """Dump firmware, or run/ensure device setup."""
     config = build_config(
@@ -107,6 +117,7 @@ def cli(
         push_only=push_only,
         readme_only=readme_only,
         outdir=output,
+        force=force,
     )
     bootstrap(level=config.settings.log_level, log_file=config.paths.log_path)
     logger.info("DumprX started: mode={} visibility={}", mode, visibility)
@@ -117,6 +128,8 @@ def cli(
     if not no_setup and not setup_complete():
         run_setup(config, explicit=False)
 
+    digest = ""
+
     if not push_only and not readme_only:
         if not firmware:
             logger.error("No Input Is Given. Pass a firmware file, folder, or website link.")
@@ -125,6 +138,13 @@ def cli(
             source = _resolve_input(firmware, config)
             resolved = resolve_source(source, config)
             logger.info("resolved source: {} ({})", resolved.path, resolved.kind)
+            if resolved.path is not None and resolved.path.is_file():
+                digest = sha256_stream(resolved.path)
+                if digest and not force and lookup(digest):
+                    logger.info(
+                        "firmware already dumped on this machine; re-run with --force to redo"
+                    )
+                    return 0
             ctx = _make_context(config)
             ctx.source = resolved.path or ctx.workdir
             install_cleanup(ctx.workdir)
@@ -162,6 +182,7 @@ def cli(
         return 1
 
     if mode == "local":
+        record(digest, outdir=config.paths.outdir, mode=mode, info=info)
         logger.info(
             "local mode: dump ready at {} (git committed, push-ready)", config.paths.outdir
         )
@@ -178,6 +199,7 @@ def cli(
             config.paths.outdir,
         )
         return 1
+    record(digest, outdir=config.paths.outdir, mode=mode, info=info)
     _notify(config, info, tree_url, mode)
 
     return 0

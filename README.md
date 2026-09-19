@@ -68,6 +68,7 @@ uv run dumprx --push-only 'link-or-folder'  # skip extraction, push existing OUT
 uv run dumprx -o /data/dumps firmware.bin   # write output under /data/dumps instead of /tmp/out
 uv run dumprx --setup                       # install prerequisites and record setup state
 uv run dumprx --no-setup firmware.bin       # skip the auto-run setup check
+uv run dumprx --force firmware.bin          # re-dump even if already dumped on this machine
 uv run dumprx --github --public firmware.bin
 uv run dumprx --help
 ```

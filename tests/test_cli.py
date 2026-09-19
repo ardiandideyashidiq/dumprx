@@ -267,5 +267,6 @@ def test_help_exits_zero():
     assert "--setup" in result.output
     assert "--no-setup" in result.output
     assert "--output" in result.output
+    assert "--force" in result.output
     assert "Mode" in result.output
     assert "Setup" in result.output
