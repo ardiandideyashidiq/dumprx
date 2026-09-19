@@ -14,18 +14,21 @@ from dumprx.config import Config
 from dumprx.props.models import FirmwareInfo
 from dumprx.publishers.base import (
     PushError,
-    commit_and_push,
     git,
     http_request,
-    init_repo,
+    push_all,
 )
 
 
 def publish(config: Config, info: FirmwareInfo, branch: str) -> str:
     """Push OUTDIR to GitLab; returns the repo tree URL (or raises PushError)."""
     secret = config.secrets
+    outdir = config.paths.outdir
     if not secret.gitlab_token:
-        raise PushError("GitLab mode selected but gitlab token is missing.")
+        raise PushError(
+            "GitLab mode selected but gitlab token is missing. The dump is "
+            f"committed locally at {outdir}; fill GITLAB_TOKEN in .dumprxenv and re-run to push."
+        )
 
     org = secret.gitlab_group or _git_user_name(config)
     instance = secret.gitlab_instance or "gitlab.com"
@@ -38,15 +41,13 @@ def publish(config: Config, info: FirmwareInfo, branch: str) -> str:
         logger.warning("Firmware already dumped! {}", tree_url)
         raise PushError(f"Firmware already dumped: {tree_url}")
 
-    outdir = config.paths.outdir
-    branch = init_repo(outdir, branch, fallback_branch=info.incremental)
     project_id = _ensure_subgroup_and_project(host, org, token, info)
 
     git("remote", "add", "origin", f"git@{instance}:{org}/{repo}.git", cwd=outdir)
 
     repo_desc = info.transname or info.codename
     logger.info("Pushing to {} via SSH... Branch: {}", host, branch)
-    commit_and_push(outdir, info.description, mode="gitlab", branch=branch)
+    push_all(outdir, branch)
 
     http_request(
         f"{host}/api/v4/projects/{project_id}",

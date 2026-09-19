@@ -79,6 +79,7 @@ class _Info:
         self.codename = "a"
         self.description = "flavor 13 TP1A 123 test"
         self.branch = "flavor-13-TP1A-123-test"
+        self.incremental = "123"
         self.is_ab = "false"
         self.transname = ""
 
@@ -114,6 +115,8 @@ def _setup(monkeypatch, tmp_path, mode_flags, *, readme_only=False):
     calls = []
     monkeypatch.setattr(cli, "run_pipeline", lambda ctx: calls.append("pipeline"))
     monkeypatch.setattr(cli, "resolve_source", lambda src, cfg: _Resolved("file", src))
+    monkeypatch.setattr(cli, "init_repo", lambda out, br, fallback_branch="": br)
+    monkeypatch.setattr(cli, "commit_local", lambda *a, **k: calls.append("commit"))
     monkeypatch.setattr(cli, "_make_info", lambda config: calls.append("props") or _Info())
     monkeypatch.setattr(
         cli, "write_readme", lambda o, info: calls.append("readme") or (o / "README.md")
@@ -134,18 +137,23 @@ def test_main_local_phase_order(monkeypatch, tmp_path):
     calls = _setup(monkeypatch, tmp_path, ["-m", "local"])
     rc = cli.main(["-m", "local", str(tmp_path / "f.bin"), "--no-setup"])
     assert rc == 0
-    assert calls == ["pipeline", "props", "readme", "twrp"]
+    assert calls == ["pipeline", "props", "readme", "twrp", "commit"]
 
 
 def test_main_gitlab_phase_order(monkeypatch, tmp_path):
     calls = _setup(monkeypatch, tmp_path, ["--gitlab"])
+
+    def fake_publish(config, info, branch):
+        calls.append("publish")
+        assert info.branch == branch  # effective branch (typed) propagates
+
     monkeypatch.setattr(cli, "_notify", lambda *a, **k: calls.append("notify"))
     import dumprx.publishers as pubmod
 
-    monkeypatch.setattr(pubmod, "publish", lambda config, info, branch: calls.append("publish") or "u")
+    monkeypatch.setattr(pubmod, "publish", fake_publish)
     rc = cli.main(["--gitlab", "--push-only", "--no-setup"])
     assert rc == 0
-    assert calls == ["props", "readme", "twrp", "publish", "notify"]
+    assert calls == ["props", "readme", "twrp", "commit", "publish", "notify"]
 
 
 def test_main_publish_failure_returns_1(monkeypatch, tmp_path):
@@ -160,6 +168,40 @@ def test_main_publish_failure_returns_1(monkeypatch, tmp_path):
     rc = cli.main(["--gitlab", "--push-only", "--no-setup"])
     assert rc == 1
     assert calls[-1] == "publish"
+
+
+def test_main_local_commit_uses_gitlab_lfs_sizing(monkeypatch, tmp_path):
+    """Local mode commits with gitlab LFS thresholds; no publisher, no notify."""
+    calls = _setup(monkeypatch, tmp_path, ["-m", "local"])
+    seen: dict = {}
+
+    def fake_commit_local(outdir, description, *, mode, branch):
+        calls.append("commit")
+        seen.update(mode=mode, branch=branch)
+
+    monkeypatch.setattr(cli, "commit_local", fake_commit_local)
+    monkeypatch.setattr(cli, "init_repo", lambda out, br, fallback_branch="": "fb-branch")
+    monkeypatch.setattr(cli, "_notify", lambda *a, **k: calls.append("notify"))
+    rc = cli.main(["-m", "local", str(tmp_path / "f.bin"), "--no-setup"])
+    assert rc == 0
+    assert seen["mode"] == "gitlab"  # local uses 100 MB LFS thresholds
+    assert seen["branch"] == "fb-branch"  # effective branch (with fallback) reaches commit
+    assert "notify" not in calls
+
+
+def test_main_gitlab_missing_token_aborts_after_local_commit(monkeypatch, tmp_path):
+    calls = _setup(monkeypatch, tmp_path, ["--gitlab"])
+    import dumprx.publishers as pubmod
+
+    def boom(config, info, branch):
+        calls.append("publish")
+        raise pubmod.PushError("GitLab mode selected but gitlab token is missing.")
+
+    monkeypatch.setattr(pubmod, "publish", boom)
+    rc = cli.main(["--gitlab", "--push-only", "--no-setup"])
+    assert rc == 1
+    assert "commit" in calls  # dump was committed before the token abort
+    assert "notify" not in calls
 
 
 def _readme_fake(o, info):
@@ -208,6 +250,8 @@ def test_push_only_with_output(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "_make_info", lambda config: _Info())
     monkeypatch.setattr(cli, "write_readme", _readme_fake)
     monkeypatch.setattr(cli, "generate_twrp", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "init_repo", lambda out, br, fallback_branch="": br)
+    monkeypatch.setattr(cli, "commit_local", lambda *a, **k: None)
     out = tmp_path / "dumps"
     assert cli.main(["--push-only", "--no-setup", "-m", "local", "-o", str(out)]) == 0
     assert kw_calls[0]["outdir"] == out

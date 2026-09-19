@@ -1,7 +1,8 @@
-"""Shared git push machinery: staged commits, retry_push, LFS object upload.
+"""Shared git machinery: local staged commits, push retry, LFS object upload.
 
 Ports dumper.sh's `retry_push`, `push_lfs_objects`, and `commit_and_push`
-(lines 1452-1547). LFS workers must run the literal command
+(lines 1452-1547). Commits always run locally via `commit_local`; pushing is a
+separate `push_all` step. LFS workers must run the literal command
 `git lfs push --object-id origin <oid>` - never `retry_push lfs push ...`
 (that would expand to `git push lfs push ...`).
 """
@@ -131,30 +132,29 @@ def _write_gitignore(outdir: Path) -> None:
     (outdir / ".gitignore").write_text("\n".join(ignored) + "\n", encoding="utf-8")
 
 
-def commit_and_push(outdir: Path, description: str, *, mode: str, branch: str) -> None:
-    """:DIRS-staged commit pipeline: README -> LFS -> apps -> partition groups -> extras."""
-    git("add", "README.md", cwd=outdir)
-    if not git("commit", "-sm", f"Add README.md for {description}", cwd=outdir).ok:
-        raise PushError("README commit failed")
-    if not retry_push(outdir, "-f", "origin", branch, max_attempts=5):
-        raise PushError("initial push failed")
+def _commit_if_staged(outdir: Path, message: str, *paths: str) -> bool:
+    """`git add` paths and commit only when something was staged; returns whether committed."""
+    git("add", *paths, cwd=outdir)
+    if git("diff", "--cached", "--quiet", cwd=outdir, capture=True).ok:
+        return False
+    if not git("commit", "-sm", message, cwd=outdir).ok:
+        raise PushError(f"commit failed: {message}")
+    return True
+
+
+def commit_local(outdir: Path, description: str, *, mode: str, branch: str) -> None:
+    """:DIRS-staged local commit pipeline: README -> LFS -> apps -> groups -> extras."""
+    _commit_if_staged(outdir, f"Add README.md for {description}", "README.md")
 
     git("lfs", "install", cwd=outdir)
     _track_large_files(outdir, mode)
 
     if (outdir / ".gitattributes").is_file():
-        git("add", ".gitattributes", cwd=outdir)
-        git("commit", "-sm", "Setup Git LFS", cwd=outdir)
-        if not retry_push(outdir, "-u", "origin", branch, max_attempts=5):
-            raise PushError("LFS setup push failed")
+        _commit_if_staged(outdir, "Setup Git LFS", ".gitattributes")
 
     apks = sorted(str(p) for p in outdir.rglob("*.apk") if p.is_file())
     if apks:
-        git("add", *apks, cwd=outdir)
-        git("commit", "-sm", f"Add apps for {description}", cwd=outdir)
-        push_lfs_objects(outdir)
-        if not retry_push(outdir, "-u", "origin", branch, max_attempts=5):
-            raise PushError("apps push failed")
+        _commit_if_staged(outdir, f"Add apps for {description}", *apks)
 
     for group in _PARTITION_GROUPS:
         paths: list[str] = []
@@ -163,15 +163,16 @@ def commit_and_push(outdir: Path, description: str, *, mode: str, branch: str) -
             if candidate.is_dir():
                 paths.append(str(prefix + group))
         if paths:
-            git("add", *paths, cwd=outdir)
-            git("commit", "-sm", f"Add {group} for {description}", cwd=outdir)
-            if not retry_push(outdir, "-u", "origin", branch, max_attempts=5):
-                raise PushError(f"push failed for {group}")
+            _commit_if_staged(outdir, f"Add {group} for {description}", *paths)
 
-    git("add", ".", cwd=outdir)
-    git("commit", "-sm", f"Add extras for {description}", cwd=outdir)
+    _commit_if_staged(outdir, f"Add extras for {description}", ".")
+
+
+def push_all(outdir: Path, branch: str) -> None:
+    """Push the committed branch and its LFS objects to origin with retries."""
     if not retry_push(outdir, "-u", "origin", branch, max_attempts=5):
-        raise PushError("extras push failed")
+        raise PushError("branch push failed")
+    push_lfs_objects(outdir)
 
 
 def _track_large_files(outdir: Path, mode: str) -> None:
@@ -224,10 +225,11 @@ def http_request(
 
 __all__ = [
     "PushError",
-    "commit_and_push",
+    "commit_local",
     "git",
     "http_request",
     "init_repo",
+    "push_all",
     "push_lfs_objects",
     "retry_push",
 ]

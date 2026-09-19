@@ -21,6 +21,7 @@ from dumprx.pipeline import install_cleanup, run_pipeline
 from dumprx.process import ProcessError
 from dumprx.props.models import FirmwareInfo, derive
 from dumprx.props.propper import PropStore
+from dumprx.publishers.base import commit_local, init_repo
 from dumprx.readme import build_tg_html, write_readme
 from dumprx.resolution import ResolutionError, resolve_source
 from dumprx.setup import run_setup, setup_complete
@@ -148,17 +149,36 @@ def cli(
 
     generate_twrp(config, is_ab=info.is_ab == "true")
 
-    if mode in ("gitlab", "github"):
-        from dumprx.publishers import publish
+    branch = init_repo(config.paths.outdir, info.branch, fallback_branch=info.incremental)
+    try:
+        commit_local(
+            config.paths.outdir,
+            info.description,
+            mode="gitlab" if mode == "local" else mode,
+            branch=branch,
+        )
+    except BaseException as exc:  # noqa: BLE001 - commit failures surface as messages
+        logger.error("local commit failed: {}", exc)
+        return 1
 
-        try:
-            tree_url = publish(config, info, info.branch)
-        except BaseException as exc:  # noqa: BLE001 - publisher failures surface as messages
-            logger.error("publish failed: {}", exc)
-            return 1
-        _notify(config, info, tree_url, mode)
-    else:
-        logger.info("local mode: dump ready at {}", config.paths.outdir)
+    if mode == "local":
+        logger.info(
+            "local mode: dump ready at {} (git committed, push-ready)", config.paths.outdir
+        )
+        return 0
+
+    from dumprx.publishers import publish
+
+    try:
+        tree_url = publish(config, info, branch)
+    except BaseException as exc:  # noqa: BLE001 - publisher failures surface as messages
+        logger.error(
+            "publish failed: {} (local commits preserved at {})",
+            exc,
+            config.paths.outdir,
+        )
+        return 1
+    _notify(config, info, tree_url, mode)
 
     return 0
 

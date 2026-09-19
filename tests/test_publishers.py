@@ -9,7 +9,7 @@ from dumprx.props.models import FirmwareInfo
 from dumprx.publishers import base
 from dumprx.publishers import github as gh
 from dumprx.publishers import gitlab as gl
-from dumprx.publishers.base import PushError, commit_and_push, push_lfs_objects, retry_push
+from dumprx.publishers.base import PushError, commit_local, push_lfs_objects, retry_push
 
 
 class _R:
@@ -84,8 +84,7 @@ def test_github_publish_api_call_sequence(monkeypatch, tmp_path):
 
     monkeypatch.setattr(gh, "http_request", fake_http)
     monkeypatch.setattr(gh, "git", lambda *a, **k: _R(0))
-    monkeypatch.setattr(gh, "commit_and_push", lambda *a, **k: None)
-    monkeypatch.setattr(gh, "init_repo", lambda out, br, fallback_branch="": br)
+    monkeypatch.setattr(gh, "push_all", lambda *a, **k: None)
 
     url = gh.publish(cfg, _info(), "branch-x")
     assert url == "https://github.com/acme/X6878_dump/tree/branch-x/"
@@ -127,8 +126,7 @@ def test_github_publish_user_scoped_create(monkeypatch, tmp_path):
 
     monkeypatch.setattr(gh, "http_request", fake_http)
     monkeypatch.setattr(gh, "git", lambda *a, **k: _R(0))
-    monkeypatch.setattr(gh, "commit_and_push", lambda *a, **k: None)
-    monkeypatch.setattr(gh, "init_repo", lambda out, br, fallback_branch="": br)
+    monkeypatch.setattr(gh, "push_all", lambda *a, **k: None)
 
     url = gh.publish(cfg, _info(), "branch-x")
     assert url == "https://github.com/bondan/X6878_dump/tree/branch-x/"
@@ -162,8 +160,7 @@ def test_gitlab_publish_api_sequence(monkeypatch, tmp_path):
 
     monkeypatch.setattr(gl, "http_request", fake_http)
     monkeypatch.setattr(gl, "git", lambda *a, **k: _R(0))
-    monkeypatch.setattr(gl, "commit_and_push", lambda *a, **k: None)
-    monkeypatch.setattr(gl, "init_repo", lambda out, br, fallback_branch="": br)
+    monkeypatch.setattr(gl, "push_all", lambda *a, **k: None)
 
     url = gl.publish(cfg, _info(), "br")
     assert url == "https://gitlab.com/grp/Infinix/X6878/-/tree/br/"
@@ -211,7 +208,7 @@ def test_push_lfs_objects_parses_oids_and_uses_object_id(monkeypatch, tmp_path):
     assert ("lfs", "push", "--object-id", "origin", "abc123") in push_cmds
 
 
-def test_commit_and_push_lfs_threshold_github_regenerates(tmp_path, monkeypatch):
+def test_commit_local_lfs_threshold_github_regenerates(tmp_path, monkeypatch):
     big = tmp_path / "system.img"
     big.write_bytes(b"\x00" * (51 * 1024 * 1024))  # > 50M
     gitcmds = []
@@ -223,11 +220,73 @@ def test_commit_and_push_lfs_threshold_github_regenerates(tmp_path, monkeypatch)
     import dumprx.publishers.base as bmod
 
     monkeypatch.setattr(bmod, "git", fake_git)
-    monkeypatch.setattr(bmod, "push_lfs_objects", lambda out: [])
-    monkeypatch.setattr(bmod, "retry_push", lambda *a, max_attempts=5: True)
 
-    # system.img is a dir here (not file) so use a file deep path check
     (tmp_path / "x.apk").write_bytes(b"apk")
-    commit_and_push(tmp_path, "desc", mode="github", branch="b")
+    commit_local(tmp_path, "desc", mode="github", branch="b")
     tracks = [a for a in gitcmds if a[:3] == ("lfs", "track", "system.img")]
     assert tracks, "50M threshold should track system.img for github mode"
+
+
+def test_commit_local_stage_order(tmp_path, monkeypatch):
+    import dumprx.publishers.base as bmod
+
+    (tmp_path / "README.md").write_text("x")
+    (tmp_path / "x.apk").write_bytes(b"apk")
+    for group in ("system_ext", "vendor", "system"):
+        (tmp_path / group).mkdir()
+    (tmp_path / "extra.bin").write_bytes(b"z")
+
+    gitcmds = []
+    commits = []
+    staged = False
+
+    def fake_git(*args, cwd, capture=False, timeout=3600):
+        nonlocal staged
+        gitcmds.append(args)
+        if args[:4] == ("diff", "--cached", "--quiet"):
+            return _R(0 if not staged else 1)
+        if args[0] == "add":
+            staged = True
+            return _R(0)
+        if args[0] == "commit":
+            commits.append(args[2])
+            staged = False
+        return _R(0)
+
+    monkeypatch.setattr(bmod, "git", fake_git)
+
+    def fake_track(outdir, mode):
+        (outdir / ".gitattributes").write_text("*.img filter=lfs diff=lfs merge=lfs -text\n")
+
+    monkeypatch.setattr(bmod, "_track_large_files", fake_track)
+
+    commit_local(tmp_path, "desc", mode="gitlab", branch="b")
+    assert commits == [
+        "Add README.md for desc",
+        "Setup Git LFS",
+        "Add apps for desc",
+        "Add system_ext for desc",
+        "Add vendor for desc",
+        "Add system for desc",
+        "Add extras for desc",
+    ]
+
+
+def test_commit_local_skips_unchanged_stages(tmp_path, monkeypatch):
+    import dumprx.publishers.base as bmod
+
+    (tmp_path / "README.md").write_text("x")
+    (tmp_path / "x.apk").write_bytes(b"apk")
+
+    commits = []
+
+    def fake_git(*args, cwd, capture=False, timeout=3600):
+        if args[0] == "commit":
+            commits.append(args[2])
+        return _R(0)  # diff --cached --quiet always clean -> nothing staged
+
+    monkeypatch.setattr(bmod, "git", fake_git)
+    monkeypatch.setattr(bmod, "_track_large_files", lambda *a, **k: None)
+
+    commit_local(tmp_path, "desc", mode="gitlab", branch="b")
+    assert commits == []

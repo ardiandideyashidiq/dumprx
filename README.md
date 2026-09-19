@@ -75,6 +75,13 @@ uv run dumprx --help
 Mode defaults to `gitlab` (matches the legacy Bash dumper defaults), and repos are
 created private unless `--public` is given.
 
+Every dump is a git repository by default: after extraction the output directory
+is `git init`-ed and the dump is committed in stages (README, LFS setup, apps,
+partitions, extras) in every mode — including `--local`, which adds no remote and
+pushes nothing. GitLab/GitHub pushes reuse those local commits, so a dump stays
+push-ready even when the token is missing: add the credential to `.dumprxenv` and
+re-run to push with no re-extraction.
+
 Help Context:
 
 ```text

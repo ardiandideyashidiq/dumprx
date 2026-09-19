@@ -15,17 +15,19 @@ from dumprx.config import Config
 from dumprx.props.models import FirmwareInfo
 from dumprx.publishers.base import (
     PushError,
-    commit_and_push,
     git,
     http_request,
-    init_repo,
+    push_all,
 )
 
 
 def publish(config: Config, info: FirmwareInfo, branch: str) -> str:
     secret = config.secrets
     if not secret.github_token:
-        raise PushError("GitHub mode selected but github token is missing.")
+        raise PushError(
+            "GitHub mode selected but github token is missing. The dump is "
+            f"committed locally at {config.paths.outdir}; fill GITHUB_TOKEN in .dumprxenv and re-run to push."
+        )
 
     org = secret.github_org or _resolve_user(secret.github_token)
     if not org:
@@ -43,7 +45,6 @@ def publish(config: Config, info: FirmwareInfo, branch: str) -> str:
         raise PushError(f"Firmware already dumped: {tree_url}")
 
     outdir = config.paths.outdir
-    branch = init_repo(outdir, branch, fallback_branch=info.incremental)
 
     repo_desc = info.transname or info.codename
     _create_repo(
@@ -52,7 +53,7 @@ def publish(config: Config, info: FirmwareInfo, branch: str) -> str:
 
     git("remote", "add", "origin", f"git@github.com:{org}/{gh_repo}.git", cwd=outdir)
     logger.info("Pushing to https://github.com/{}.git via SSH... Branch: {}", org, branch)
-    commit_and_push(outdir, info.description, mode="github", branch=branch)
+    push_all(outdir, branch)
 
     public = config.settings.visibility == "public"
     http_request(
