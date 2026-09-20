@@ -23,6 +23,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from loguru import logger
+
 AVB_FOOTER_MAGIC = b"AVBf"
 
 # AIK-derived address convention kept for parity with the legacy dumper:
@@ -46,6 +48,9 @@ class ImageInfo:
     ramdisk_offset: str | None = None
     tags_offset: str | None = None
     origsize: int = 0
+    boot_size: int = 0
+    vendor_boot_size: int = 0
+    recovery_size: int = 0
     ramdisk_compression: str = ""
     sigtype: str = ""
     kernel: Path | None = None
@@ -53,6 +58,12 @@ class ImageInfo:
     dtb: Path | None = None
     dtbo: Path | None = None
     ramdisk: Path | None = None
+
+    @property
+    def is_header_v4_gki(self) -> bool:
+        return self.header_version in ("3", "4") and (
+            self.vendor_boot_size > 0 or self.recovery_size == 0
+        )
 
 
 def select_primary(images: list[Path]) -> Path:
@@ -62,7 +73,8 @@ def select_primary(images: list[Path]) -> Path:
     partition image wins over them.
     """
     def rank(image: Path) -> int:
-        return IMAGE_PRIORITY.index(image.name) if image.name in IMAGE_PRIORITY else len(
+        stem = image.stem.lower()
+        return IMAGE_PRIORITY.index(stem) if stem in IMAGE_PRIORITY else len(
             IMAGE_PRIORITY
         )
 
@@ -220,20 +232,63 @@ def unpack_images(
         unpack_bootimg_tool = Path(found)
 
     primary = select_primary(images)
+    logger.debug(
+        "Primary recovery candidate image: {} (candidates: {})",
+        primary.name,
+        [img.name for img in images],
+    )
     run_dir = workdir / "bootimg-unpack"
     run_dir.mkdir(parents=True, exist_ok=True)
 
     info, _ = _unpack_one(primary, run_dir / primary.stem, unpack_bootimg_tool)
+    logger.debug(
+        "Unpacked primary image {}: header_version={}, kernel={}, ramdisk={}",
+        primary.name,
+        info.header_version,
+        bool(info.kernel),
+        bool(info.ramdisk),
+    )
+
+    primary_stem = primary.stem.lower()
+    primary_sz = primary.stat().st_size
+    if primary_stem == "boot":
+        info.boot_size = primary_sz
+    elif primary_stem == "vendor_boot":
+        info.vendor_boot_size = primary_sz
+    elif primary_stem == "recovery":
+        info.recovery_size = primary_sz
 
     for image in images:
+        sz = image.stat().st_size
+        stem = image.stem.lower()
+        if stem == "boot":
+            info.boot_size = sz
+        elif stem == "vendor_boot":
+            info.vendor_boot_size = sz
+        elif stem == "recovery":
+            info.recovery_size = sz
+
         if image == primary:
             continue
         aux, _ = _unpack_one(image, run_dir / image.stem, unpack_bootimg_tool)
+        logger.debug(
+            "Unpacked auxiliary image {}: header_version={}, kernel={}, ramdisk={}",
+            image.name,
+            aux.header_version,
+            bool(aux.kernel),
+            bool(aux.ramdisk),
+        )
+        if info.kernel is None and aux.kernel is not None:
+            info.kernel = aux.kernel
+            logger.debug("Merged kernel from auxiliary image: {}", image.name)
         if info.dtb is None and aux.dtb is not None:
             info.dtb = aux.dtb
+            logger.debug("Merged dtb from auxiliary image: {}", image.name)
         if info.dt is None and aux.dt is not None:
             info.dt = aux.dt
+            logger.debug("Merged dt from auxiliary image: {}", image.name)
         if not info.cmdline and aux.cmdline:
             info.cmdline = aux.cmdline
+            logger.debug("Merged cmdline from auxiliary image: {}", image.name)
 
     return info

@@ -13,7 +13,9 @@ AB_OTA_PARTITIONS +=
     {{ partition.name }}
 {%- endfor %}
 
+{% if not image_info.is_header_v4_gki %}
 BOARD_USES_RECOVERY_AS_BOOT := true
+{% endif %}
 
 {% endif %}
 # Architecture
@@ -102,6 +104,7 @@ TARGET_KERNEL_CONFIG := {{ device_info.codename }}_defconfig
 TARGET_KERNEL_SOURCE := kernel/{{ device_info.manufacturer }}/{{ device_info.codename }}
 
 # Kernel - prebuilt
+{% if image_info.kernel %}
 TARGET_FORCE_PREBUILT_KERNEL := true
 ifeq ($(TARGET_FORCE_PREBUILT_KERNEL),true)
 TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/kernel
@@ -120,6 +123,23 @@ BOARD_PREBUILT_DTBOIMAGE := $(DEVICE_PATH)/prebuilt/dtbo.img
 BOARD_KERNEL_SEPARATED_DTBO := 
 {% endif %}
 endif
+{% else %}
+TARGET_NO_KERNEL := true
+{% if image_info.dt %}
+TARGET_PREBUILT_DT := $(DEVICE_PATH)/prebuilt/dt.img
+BOARD_MKBOOTIMG_ARGS += --dt $(TARGET_PREBUILT_DT)
+BOARD_KERNEL_SEPARATED_DT := 
+{% endif %}
+{% if image_info.dtb %}
+TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb.img
+BOARD_MKBOOTIMG_ARGS += --dtb $(TARGET_PREBUILT_DTB)
+BOARD_INCLUDE_DTB_IN_BOOTIMG := 
+{% endif %}
+{% if image_info.dtbo %}
+BOARD_PREBUILT_DTBOIMAGE := $(DEVICE_PATH)/prebuilt/dtbo.img
+BOARD_KERNEL_SEPARATED_DTBO := 
+{% endif %}
+{% endif %}
 
 # Partitions
 {% if device_info.device_uses_system_as_root %}
@@ -128,8 +148,19 @@ BOARD_BUILD_SYSTEM_ROOT_IMAGE := true
 {% if image_info.pagesize %}
 BOARD_FLASH_BLOCK_SIZE := {{ image_info.pagesize|int * 64 }} # (BOARD_KERNEL_PAGESIZE * 64)
 {% endif %}
+{% if image_info.boot_size %}
+BOARD_BOOTIMAGE_PARTITION_SIZE := {{ image_info.boot_size }}
+{% elif image_info.origsize %}
 BOARD_BOOTIMAGE_PARTITION_SIZE := {{ image_info.origsize }}
+{% endif %}
+{% if image_info.vendor_boot_size %}
+BOARD_VENDOR_BOOTIMAGE_PARTITION_SIZE := {{ image_info.vendor_boot_size }}
+{% endif %}
+{% if image_info.recovery_size %}
+BOARD_RECOVERYIMAGE_PARTITION_SIZE := {{ image_info.recovery_size }}
+{% elif not image_info.is_header_v4_gki and image_info.origsize %}
 BOARD_RECOVERYIMAGE_PARTITION_SIZE := {{ image_info.origsize }}
+{% endif %}
 BOARD_HAS_LARGE_FILESYSTEM := true
 BOARD_SYSTEMIMAGE_PARTITION_TYPE := ext4
 BOARD_USERDATAIMAGE_FILE_SYSTEM_TYPE := ext4
@@ -138,7 +169,7 @@ TARGET_COPY_OUT_VENDOR := vendor
 {% if device_info.device_uses_dynamic_partitions %}
 BOARD_SUPER_PARTITION_SIZE := 9126805504 # TODO: Fix hardcoded value
 BOARD_SUPER_PARTITION_GROUPS := {{ device_info.manufacturer }}_dynamic_partitions
-BOARD_{{ device_info.manufacturer|upper }}_DYNAMIC_PARTITIONS_PARTITION_LIST := {%- for partition in fstab.get_logical_partitions() %} {{ partition.src }}{% endfor %}
+BOARD_{{ device_info.manufacturer|upper }}_DYNAMIC_PARTITIONS_PARTITION_LIST := {%- for partition in fstab.get_logical_partitions()|unique(attribute='src') %} {{ partition.src }}{% endfor %}
 
 BOARD_{{ device_info.manufacturer|upper }}_DYNAMIC_PARTITIONS_SIZE := 9122611200 # TODO: Fix hardcoded value
 {% endif %}
@@ -150,6 +181,13 @@ LZMA_RAMDISK_TARGETS := recovery
 TARGET_BOARD_PLATFORM := {{ device_info.platform }}
 
 # Recovery
+{% if image_info.is_header_v4_gki %}
+TARGET_NO_RECOVERY := true
+BOARD_USES_GENERIC_KERNEL_IMAGE := true
+BOARD_EXCLUDE_KERNEL_FROM_RECOVERY_IMAGE := true
+BOARD_MOVE_RECOVERY_RESOURCES_TO_VENDOR_BOOT := true
+TW_LOAD_VENDOR_BOOT_MODULES := true
+{% endif %}
 {% if image_info.dtbo and not device_info.device_is_ab %}
 BOARD_INCLUDE_RECOVERY_DTBO := true
 {% endif %}
@@ -161,7 +199,7 @@ TARGET_USERIMAGES_USE_F2FS := true
 
 {% if device_info.vendor_build_security_patch %}
 # Security patch level
-VENDOR_SECURITY_PATCH := 2021-08-01
+VENDOR_SECURITY_PATCH := {{ device_info.vendor_build_security_patch }}
 
 {% endif %}
 {% if image_info.sigtype == "AVBv2" %}

@@ -181,7 +181,7 @@ def cli(
         logger.info("README.md generated. Skipping Tree generation & Pushing.")
         return 0
 
-    generate_twrp(config)
+    generate_twrp(config, info=info)
     generate_aospdtgen(config)
 
     branch = init_repo(config.paths.outdir, info.branch, fallback_branch=info.incremental)

@@ -30,10 +30,12 @@ def render_readme(info: FirmwareInfo) -> list[str]:
     lines += _line("Model", info.codename)
 
     if info.platform:
-        if info.tranchipset:
-            lines.append(f"- Platform: {info.platform} ({info.tranchipset})")
-        elif info.opchipset:
-            lines.append(f"- Platform: {info.platform} ({info.opchipset})")
+        tranchipset = info.tranchipset if info.tranchipset and info.tranchipset.lower() != "unknown" else ""
+        opchipset = info.opchipset if info.opchipset and info.opchipset.lower() != "unknown" else ""
+        if tranchipset:
+            lines.append(f"- Platform: {info.platform} ({tranchipset})")
+        elif opchipset:
+            lines.append(f"- Platform: {info.platform} ({opchipset})")
         else:
             lines.append(f"- Platform: {info.platform}")
 
@@ -72,7 +74,11 @@ def build_tg_html(info: FirmwareInfo, repo_url: str = "", repo_label: str = "") 
             parts.append(f"\n<b>{label}: %s</b>" % f"<code>{value}</code>")
     parts.append("\n<b>Brand: %s</b>" % f"<code>{info.manufacturer}</code>")
     parts.append("\n<b>Model: %s</b>" % f"<code>{info.codename}</code>")
-    ts_chipset = f" ({info.tranchipset})" if info.tranchipset else ""
+    ts_chipset = (
+        f" ({info.tranchipset})"
+        if info.tranchipset and info.tranchipset.lower() != "unknown"
+        else ""
+    )
     parts.append("\n<b>Platform: %s</b>" % f"<code>{info.platform}{ts_chipset}</code>")
     parts.append("\n<b>Android build: %s</b>" % f"<code>{info.id}</code>")
     parts.append("\n<b>Android ver: %s</b>" % f"<code>{info.release}</code>")

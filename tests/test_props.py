@@ -161,3 +161,18 @@ def test_xiaomi_and_transsion_name_fields(tmp_path):
     info = derive(tmp_path, store)
     assert info.xiaominame == "POCO 5 Pro"  # all-lowercase values filtered
     assert info.transname == "Transsion S1"
+
+
+def test_expand_locs_unbraced_comma():
+    dirs = expand_locs("vendor,system,system/system,odm")
+    assert [str(d) for d in dirs] == ["vendor", "system", "system/system", "odm"]
+
+
+def test_derive_density_from_vendor_and_date_fallback(tmp_path):
+    write(tmp_path, "vendor/build.prop", "ro.sf.lcd_density=320\nro.product.vendor.manufacturer=ITEL\nro.product.vendor.device=itel-P661N\n")
+    write(tmp_path, "system/system/build.prop", "ro.build.date=Wed Jul 23 05:12:24 CST 2025\n")
+    store = PropStore(tmp_path)
+    info = derive(tmp_path, store)
+    assert info.density == "320"
+    assert info.date == "Wed Jul 23 05:12:24 CST 2025"
+

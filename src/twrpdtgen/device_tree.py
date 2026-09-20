@@ -9,7 +9,7 @@ from os import chmod
 from pathlib import Path
 from shutil import copyfile, rmtree
 from stat import S_IRGRP, S_IROTH, S_IRWXU
-from typing import List
+from typing import Any, List
 
 from loguru import logger
 from sebaubuntu_libs.libandroid.device_info import DeviceInfo
@@ -43,7 +43,8 @@ class DeviceTree:
 	and save the location of some important files
 	"""
 	def __init__(self, images: List[Path], unpack_bootimg_tool: Path | None = None,
-	             workdir: Path | None = None, dtbo: Path | None = None):
+	             workdir: Path | None = None, dtbo: Path | None = None,
+	             firmware_info: Any | None = None):
 		"""Initialize the device tree class."""
 		self.images = images
 
@@ -74,6 +75,42 @@ class DeviceTree:
 			self.build_prop.import_props(build_prop)
 
 		self.device_info = DeviceInfo(self.build_prop)
+
+		if firmware_info is not None:
+			if getattr(firmware_info, "fingerprint", None):
+				self.device_info.build_fingerprint = firmware_info.fingerprint
+			if getattr(firmware_info, "description", None):
+				self.device_info.build_description = firmware_info.description
+			if getattr(firmware_info, "sec_patch", None):
+				self.device_info.vendor_build_security_patch = firmware_info.sec_patch
+				self.device_info.build_security_patch = firmware_info.sec_patch
+			if getattr(firmware_info, "density", None) and firmware_info.density != "undefined":
+				self.device_info.screen_density = firmware_info.density
+			if getattr(firmware_info, "platform", None):
+				self.device_info.platform = firmware_info.platform.lower()
+			if getattr(firmware_info, "brand", None):
+				self.device_info.brand = firmware_info.brand
+			if getattr(firmware_info, "transname", None):
+				self.device_info.model = firmware_info.transname
+
+		mfr_prefix = f"{self.device_info.manufacturer.lower()}-"
+		if self.device_info.codename.lower().startswith(mfr_prefix):
+			self.device_info.codename = self.device_info.codename[len(mfr_prefix):]
+		elif self.device_info.brand:
+			brand_prefix = f"{self.device_info.brand.lower()}-"
+			if self.device_info.codename.lower().startswith(brand_prefix):
+				self.device_info.codename = self.device_info.codename[len(brand_prefix):]
+
+		if self.device_info.bootloader_board_name and self.device_info.bootloader_board_name.lower().startswith(mfr_prefix):
+			self.device_info.bootloader_board_name = self.device_info.bootloader_board_name[len(mfr_prefix):]
+
+		logger.debug(
+			"Device info resolved: manufacturer={}, codename={}, platform={}, fingerprint={}",
+			self.device_info.manufacturer,
+			self.device_info.codename,
+			self.device_info.platform,
+			self.device_info.build_fingerprint,
+		)
 
 		# Generate fstab
 		fstab = None
@@ -118,7 +155,7 @@ class DeviceTree:
 		self._render_template(device_tree_folder, "BoardConfig.mk")
 		self._render_template(device_tree_folder, "device.mk")
 		self._render_template(device_tree_folder, "extract-files.sh")
-		self._render_template(device_tree_folder, "omni_device.mk", out_file=f"omni_{self.device_info.codename}.mk")
+		self._render_template(device_tree_folder, "twrp_device.mk", out_file=f"twrp_{self.device_info.codename}.mk")
 		self._render_template(device_tree_folder, "README.md")
 		self._render_template(device_tree_folder, "setup-makefiles.sh")
 		self._render_template(device_tree_folder, "vendorsetup.sh")

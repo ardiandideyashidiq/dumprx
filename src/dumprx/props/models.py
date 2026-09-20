@@ -303,7 +303,7 @@ def derive(root: Path, store: PropStore) -> FirmwareInfo:
     brand_ext = _clean(g("ro.product.system_ext.brand", ["system_ext"]))
     if brand_ext:
         info.brand = brand_ext
-    density_v = g("ro.sf.lcd_density", ["vendor,system,system/system,odm"])
+    density_v = g("ro.sf.lcd_density", ["{vendor,system,system/system,odm}"])
     if density_v:
         info.density = _clean(density_v)
 
@@ -324,7 +324,9 @@ def derive(root: Path, store: PropStore) -> FirmwareInfo:
 
     info.tranchipset = _overlay_chipset(root, ("TranSettingsApkResOverlay", "ItelSettingsResOverlay"))
     if not info.tranchipset:
-        info.tranchipset = _clean(_file_text(root / "tr_product/etc/asset/transettings/cpu_info"))
+        raw_cpu = _clean(_file_text(root / "tr_product/etc/asset/transettings/cpu_info"))
+        if raw_cpu and raw_cpu.lower() not in ("unknown", "null", "undefined"):
+            info.tranchipset = raw_cpu
 
     cpu_model = _grep_first(root, ["my_product/etc/build.prop"], r"(?<=^ro.product.oplus.cpuinfo=)[^\r\n]*")
     if cpu_model:
@@ -374,7 +376,11 @@ def derive(root: Path, store: PropStore) -> FirmwareInfo:
     info.repo = f"{info.manufacturer}/{info.codename}" if info.codename else info.manufacturer
 
     info.kernel_version = _kernel_version(root / "boot")
-    info.date = _clean(_grep_first(root, ["tr_manifest/build.prop"], r"(?<=^ro.build.date=)[^\r\n]*"))
+    info.date = _clean(
+        _grep_first(root, ["tr_manifest/build.prop"], r"(?<=^ro.build.date=)[^\r\n]*")
+        or g("ro.build.date", ["{system,system/system,tr_product,vendor}"])
+        or g("ro.build.date.utc", ["{system,system/system,tr_product,vendor}"])
+    )
 
     return info
 
@@ -400,7 +406,9 @@ def _overlay_chipset(root: Path, overlay_names: tuple[str, ...]) -> str:
                     strings_xml.read_text(encoding="utf-8", errors="replace"),
                 )
                 if match:
-                    return match.group(1)
+                    val = match.group(1).strip()
+                    if val and val.lower() not in ("unknown", "null", "undefined"):
+                        return val
         except Exception:  # noqa: BLE001 - overlay decode is best-effort
             logger.debug("overlay chipset decode failed for {}", name)
     return ""

@@ -50,6 +50,8 @@ def expand_locs(spec: str) -> list[Path]:
     if spec.startswith("{") and "}" in spec:
         inner, _, rest = spec[1:].partition("}")
         dirs = [Path(part.strip()) for part in inner.split(",") if part.strip()]
+    elif "," in spec and "{" not in spec:
+        dirs = [Path(part.strip()) for part in spec.split(",") if part.strip()]
     else:
         dirs = [Path(spec)]
     expanded: list[Path] = []
