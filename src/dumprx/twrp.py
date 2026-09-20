@@ -10,12 +10,10 @@ from typing import Any
 from loguru import logger
 
 from dumprx.tools import Tools
+from twrpdtgen import module_path
 from twrpdtgen.device_tree import DeviceTree
 
-_WIKI_README = (
-    "https://raw.githubusercontent.com/wiki/SebaUbuntu/TWRP-device-tree-generator/"
-    "4.-Build-TWRP-from-source.md"
-)
+_VENDORED_WIKI_README = module_path / "templates" / "wiki_README.md"
 
 # Candidates in twrpdtgen priority order (best ambiguity for TWRP first).
 IMAGE_CANDIDATES = ("recovery.img", "vendor_boot.img", "init_boot.img", "boot.img")
@@ -58,19 +56,20 @@ def generate(config, info: Any | None = None) -> None:
         logger.warning("TWRP device tree generation skipped: {}", exc)
         return
 
-    _fetch_wiki_readme(twrp_out)
+    _install_wiki_readme(twrp_out)
     _rm_dotgit(twrp_out)
 
 
-def _fetch_wiki_readme(outdir: Path) -> None:
+def _install_wiki_readme(outdir: Path) -> None:
     target = outdir / "README.md"
     if target.is_file():
         return
-    from dumprx.process import run
+    if _VENDORED_WIKI_README.is_file():
+        shutil.copyfile(_VENDORED_WIKI_README, target)
 
-    result = run(["curl", "-s", _WIKI_README, "-o", str(target)], timeout=120)
-    if not result.ok:
-        logger.warning("TWRP wiki README fetch failed (rc={})", result.returncode)
+
+# Backwards-compatibility alias for tests
+_fetch_wiki_readme = _install_wiki_readme
 
 
 def _rm_dotgit(root: Path) -> None:
