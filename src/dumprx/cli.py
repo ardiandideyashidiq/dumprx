@@ -182,7 +182,7 @@ def cli(
         return 0
 
     generate_twrp(config, info=info)
-    generate_aospdtgen(config)
+    generate_aospdtgen(config, info=info)
 
     branch = init_repo(config.paths.outdir, info.branch, fallback_branch=info.incremental)
     try:

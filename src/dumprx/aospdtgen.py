@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from loguru import logger
 
@@ -10,7 +11,7 @@ from aospdtgen.device_tree import DeviceTree
 from dumprx.tools import Tools
 
 
-def generate(config) -> None:
+def generate(config, info: Any | None = None) -> None:
     """Feed the OUTDIR tree to the vendored DeviceTree, best-effort."""
     outdir = config.paths.outdir
     boot = outdir / "boot.img"
@@ -30,6 +31,7 @@ def generate(config) -> None:
             outdir,
             workdir=config.paths.workdir,
             unpack_bootimg_tool=unpack_bootimg,
+            firmware_info=info,
         )
         target = (
             outdir

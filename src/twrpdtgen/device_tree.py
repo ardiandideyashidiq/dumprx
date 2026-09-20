@@ -77,6 +77,10 @@ class DeviceTree:
 		self.device_info = DeviceInfo(self.build_prop)
 
 		if firmware_info is not None:
+			if getattr(firmware_info, "codename", None):
+				self.device_info.codename = firmware_info.codename
+			if getattr(firmware_info, "manufacturer", None):
+				self.device_info.manufacturer = firmware_info.manufacturer.lower()
 			if getattr(firmware_info, "fingerprint", None):
 				self.device_info.build_fingerprint = firmware_info.fingerprint
 			if getattr(firmware_info, "description", None):

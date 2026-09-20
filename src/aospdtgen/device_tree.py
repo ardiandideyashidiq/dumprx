@@ -14,7 +14,7 @@ from sebaubuntu_libs.libpath import is_relative_to
 from sebaubuntu_libs.libreorder import strcoll_files_key
 from shutil import rmtree
 from stat import S_IRWXU, S_IRGRP, S_IROTH
-from typing import Optional
+from typing import Any, Optional
 
 from aospdtgen.proprietary_files.proprietary_files_list import ProprietaryFilesList
 from aospdtgen.templates import render_template
@@ -31,6 +31,7 @@ class DeviceTree:
         no_proprietary_files: bool = False,
         workdir: Optional[Path] = None,
         unpack_bootimg_tool: Optional[Path] = None,
+        firmware_info: Optional[Any] = None,
     ):
         """Given a path to a dumpyara dump path, generate a device tree by parsing it."""
         self.path = path
@@ -46,6 +47,40 @@ class DeviceTree:
         for partition in self.partitions.get_all_partitions():
             self.build_prop.import_props(partition.build_prop)
         self.device_info = DeviceInfo(self.build_prop)
+
+        if firmware_info is not None:
+            if getattr(firmware_info, "codename", None):
+                self.device_info.codename = firmware_info.codename
+            if getattr(firmware_info, "manufacturer", None):
+                self.device_info.manufacturer = firmware_info.manufacturer.lower()
+            if getattr(firmware_info, "brand", None):
+                self.device_info.brand = firmware_info.brand
+            if getattr(firmware_info, "model", None):
+                self.device_info.model = firmware_info.model
+            elif getattr(firmware_info, "transname", None):
+                self.device_info.model = firmware_info.transname
+            if getattr(firmware_info, "fingerprint", None):
+                self.device_info.build_fingerprint = firmware_info.fingerprint
+            if getattr(firmware_info, "description", None):
+                self.device_info.build_description = firmware_info.description
+            if getattr(firmware_info, "sec_patch", None):
+                self.device_info.vendor_build_security_patch = firmware_info.sec_patch
+                self.device_info.build_security_patch = firmware_info.sec_patch
+            if getattr(firmware_info, "density", None) and firmware_info.density != "undefined":
+                self.device_info.screen_density = firmware_info.density
+            if getattr(firmware_info, "platform", None):
+                self.device_info.platform = firmware_info.platform.lower()
+
+        mfr_prefix = f"{self.device_info.manufacturer.lower()}-"
+        if self.device_info.codename.lower().startswith(mfr_prefix):
+            self.device_info.codename = self.device_info.codename[len(mfr_prefix):]
+        elif self.device_info.brand:
+            brand_prefix = f"{self.device_info.brand.lower()}-"
+            if self.device_info.codename.lower().startswith(brand_prefix):
+                self.device_info.codename = self.device_info.codename[len(brand_prefix):]
+
+        if self.device_info.bootloader_board_name and self.device_info.bootloader_board_name.lower().startswith(mfr_prefix):
+            self.device_info.bootloader_board_name = self.device_info.bootloader_board_name[len(mfr_prefix):]
 
         LOGI("Parsing fstab")
         fstabs = [
