@@ -14,6 +14,7 @@ its shell-escaped argument line plus the extracted blob files onto the
 
 from __future__ import annotations
 
+import copy
 import gzip
 import lzma
 import shlex
@@ -150,7 +151,16 @@ def extract_ramdisk(blob_path: Path, dest_dir: Path) -> str:
     return compression
 
 
+_UNPACK_CACHE: dict[tuple[Path, Path], tuple[ImageInfo, dict[str, str]]] = {}
+
+
 def _unpack_one(image: Path, outdir: Path, tool: Path) -> tuple[ImageInfo, dict[str, str]]:
+    cache_key = (image.resolve(), outdir.resolve())
+    if cache_key in _UNPACK_CACHE and outdir.is_dir():
+        logger.debug("Reusing unpacked {} in {}", image.name, outdir)
+        cached_info, cached_pairs = _UNPACK_CACHE[cache_key]
+        return copy.copy(cached_info), dict(cached_pairs)
+
     pairs = _parse_unpack_output(
         _run(
             tool,
@@ -202,6 +212,7 @@ def _unpack_one(image: Path, outdir: Path, tool: Path) -> tuple[ImageInfo, dict[
         info.ramdisk_compression = extract_ramdisk(blob, ramdisk_dir)
         info.ramdisk = ramdisk_dir
 
+    _UNPACK_CACHE[cache_key] = (copy.copy(info), dict(pairs))
     return info, pairs
 
 

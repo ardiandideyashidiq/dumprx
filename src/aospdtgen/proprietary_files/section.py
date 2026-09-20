@@ -6,17 +6,24 @@
 from importlib import import_module
 from pathlib import Path
 from pkgutil import iter_modules
-from re import match
 from sebaubuntu_libs.libandroid.elf.elf import ELF
 from sebaubuntu_libs.libandroid.partitions.partition import AndroidPartition
 from sebaubuntu_libs.libexception import format_exception
 from sebaubuntu_libs.liblogging import LOGE
-from sebaubuntu_libs.libpath import is_relative_to
 from sebaubuntu_libs.libreorder import strcoll_files_key
-from sebaubuntu_libs.libstring import removesuffix
 from typing import Dict, List, Type
 
-from aospdtgen.proprietary_files.elf import get_shared_libs
+
+_ELF_NEEDED_CACHE: Dict[Path, set] = {}
+
+
+def _get_needed_libs_cached(file: Path) -> set:
+    if file not in _ELF_NEEDED_CACHE:
+        try:
+            _ELF_NEEDED_CACHE[file] = ELF.get_needed_libs(file)
+        except Exception:
+            _ELF_NEEDED_CACHE[file] = set()
+    return _ELF_NEEDED_CACHE[file]
 
 
 class Section:
@@ -48,55 +55,63 @@ class Section:
     def __init__(self):
         """Initialize the section."""
         self.files: List[Path] = []
+        self._filenames_set = set(self.filenames)
+        self._folders_set = set(self.folders)
+        self._apexes_set = set(self.apexes)
+        self._apps_set = set(self.apps)
+        self._binaries_set = set(self.binaries)
+        self._libraries_set = set(self.libraries)
+        import re
+
+        self._compiled_patterns = [re.compile(p) for p in self.patterns]
 
     def add_files(self, files: List[Path], partition: AndroidPartition):
         matched: List[Path] = []
         not_matched: List[Path] = []
 
+        rel_map: Dict[Path, Path] = {file: file.relative_to(partition.path) for file in files}
+
         for file in files:
-            file_relative = file.relative_to(partition.path)
-            (matched if self.file_match(file_relative) else not_matched).append(file)
+            (matched if self.file_match(rel_map[file]) else not_matched).append(file)
+
+        # Index unmatched .so files by name for O(1) lookup
+        not_matched_so: Dict[str, List[Path]] = {}
+        for file in not_matched:
+            if file.suffix == ".so":
+                not_matched_so.setdefault(file.name, []).append(file)
 
         # Handle shared libs
-        for file in matched:
-            file_relative = file.relative_to(partition.path)
-            # Check only ELFs
-            if (
-                not is_relative_to(file_relative, "bin")
-                and not is_relative_to(file_relative, "lib")
-                and not is_relative_to(file_relative, "lib64")
-            ):
+        i = 0
+        while i < len(matched):
+            file = matched[i]
+            i += 1
+            file_relative = rel_map.get(file) or file.relative_to(partition.path)
+            parts = file_relative.parts
+            if not parts or parts[0] not in ("bin", "lib", "lib64"):
                 continue
 
             # Add shared libs used by the section ELFs
-            needed_libs = ELF.get_needed_libs(file)
+            needed_libs = _get_needed_libs_cached(file)
             for lib in needed_libs:
-                # Skip the lib if it belongs to another section
-                skip = False
-
-                for interface in known_interfaces:
-                    if match(f"{interface}(@[0-9]+\\.[0-9]+|-).*\\.so", lib):
-                        skip = True
-                        break
-
-                if removesuffix(lib, ".so") in known_libraries:
-                    skip = True
-
-                if skip:
+                # Skip the lib if it belongs to another interface section
+                if "@" in lib and lib.split("@", 1)[0] in known_interfaces_set:
+                    continue
+                if "-" in lib and lib.split("-", 1)[0] in known_interfaces_set:
                     continue
 
-                # Recursively handle shared libs' shared libs as well
-                unmatched_shared_libs = get_shared_libs(not_matched)
-                for file in unmatched_shared_libs:
-                    if file.name != lib:
-                        continue
+                lib_stem = lib[:-3] if lib.endswith(".so") else lib
+                if lib_stem in known_libraries_set:
+                    continue
 
-                    # Move from unmatched to matched
-                    not_matched.remove(file)
-                    matched.append(file)
+                candidates = not_matched_so.pop(lib, None)
+                if candidates:
+                    for cand in candidates:
+                        not_matched.remove(cand)
+                        matched.append(cand)
+                        rel_map[cand] = cand.relative_to(partition.path)
 
         self.files.extend(
-            partition.model.proprietary_files_prefix / file.relative_to(partition.path)
+            partition.model.proprietary_files_prefix / rel_map[file]
             for file in matched
         )
 
@@ -111,74 +126,86 @@ class Section:
         if self.name == "Miscellaneous":
             return True
 
-        # Interfaces
-        for interface in self.interfaces:
-            # Service binary (we try)
-            if is_relative_to(file, "bin") and interface in file.name:
-                return True
+        parts = file.parts
+        if not parts:
+            return False
 
-            # Service init script (we try)
-            if is_relative_to(file, "etc/init") and interface in file.name:
-                return True
+        first = parts[0]
+        name = file.name
 
-            # VINTF fragment (again, we try)
-            if is_relative_to(file, "etc/vintf/manifest") and interface in file.name:
-                return True
-
-            # Passthrough impl (only HIDL)
-            if (is_relative_to(file, "lib/hw") or is_relative_to(file, "lib64/hw")) and match(
-                f"{interface}@[0-9]+\\.[0-9]+-impl\\.so", file.name
-            ):
-                return True
-
-            # Interface libs (AIDL and HIDL)
-            if (is_relative_to(file, "lib") or is_relative_to(file, "lib64")) and match(
-                f"{interface}(@[0-9]+\\.[0-9]+|-).*\\.so", file.name
-            ):
-                return True
-
-        # Hardware modules
-        if is_relative_to(file, "lib/hw") or is_relative_to(file, "lib64/hw"):
-            for hardware_module in self.hardware_modules:
-                if file.name.startswith(f"{hardware_module}.") and file.suffix == ".so":
-                    return True
-
-        # APEXes
-        if is_relative_to(file, "apex") and file.suffix == ".apex" and file.stem in self.apexes:
-            return True
-
-        # Apps
-        if is_relative_to(file, "app") or is_relative_to(file, "priv-app"):
-            if file.suffix == ".apk" and file.stem in self.apps:
-                return True
-
-        # Binaries
-        if is_relative_to(file, "bin") and file.name in self.binaries:
-            return True
-
-        # Init scripts
-        if is_relative_to(file, "etc/init"):
-            for binary in self.binaries:
-                if match(f"(init)?(.)?{binary}\\.rc", file.name):
-                    return True
-
-        # Libraries
-        if is_relative_to(file, "lib/") or is_relative_to(file, "lib64/"):
-            if file.suffix == ".so" and file.stem in self.libraries:
+        # Folders
+        for folder in file.parents:
+            if str(folder) in self._folders_set:
                 return True
 
         # Filenames
-        if file.name in self.filenames:
+        if name in self._filenames_set:
             return True
 
-        # Folders
-        for folder in [str(folder) for folder in file.parents]:
-            if folder in self.folders:
-                return True
+        # APEXes
+        if first == "apex" and file.suffix == ".apex" and file.stem in self._apexes_set:
+            return True
+
+        # Apps
+        if first in ("app", "priv-app") and file.suffix == ".apk" and file.stem in self._apps_set:
+            return True
+
+        # Binaries
+        if first == "bin" and name in self._binaries_set:
+            return True
+
+        # Init scripts
+        if len(parts) >= 2 and parts[0] == "etc" and parts[1] == "init":
+            for binary in self.binaries:
+                if (name.endswith(f"{binary}.rc") or name == f"{binary}.rc") and (
+                    name.startswith("init.") or name.startswith("init_") or name == f"{binary}.rc"
+                ):
+                    return True
+
+        # Libraries
+        is_lib = first in ("lib", "lib64")
+        if is_lib and file.suffix == ".so" and file.stem in self._libraries_set:
+            return True
+
+        # Hardware modules
+        is_lib_hw = is_lib and len(parts) >= 2 and parts[1] == "hw"
+        if is_lib_hw and file.suffix == ".so":
+            for hardware_module in self.hardware_modules:
+                if name.startswith(f"{hardware_module}."):
+                    return True
+
+        # Interfaces
+        if self.interfaces:
+            # Service binary
+            if first == "bin":
+                for interface in self.interfaces:
+                    if interface in name:
+                        return True
+            # Service init script
+            elif len(parts) >= 2 and parts[0] == "etc" and parts[1] == "init":
+                for interface in self.interfaces:
+                    if interface in name:
+                        return True
+            # VINTF fragment
+            elif len(parts) >= 3 and parts[0] == "etc" and parts[1] == "vintf" and parts[2] == "manifest":
+                for interface in self.interfaces:
+                    if interface in name:
+                        return True
+            # Passthrough impl (only HIDL)
+            elif is_lib_hw and name.endswith("-impl.so"):
+                for interface in self.interfaces:
+                    if name.startswith(interface) and "@" in name:
+                        return True
+            # Interface libs (AIDL and HIDL)
+            elif is_lib and file.suffix == ".so":
+                for interface in self.interfaces:
+                    if name.startswith(interface) and ("@" in name or "-" in name):
+                        return True
 
         # Patterns
-        if [pattern for pattern in self.patterns if match(pattern, str(file))]:
-            return True
+        for pattern in self._compiled_patterns:
+            if pattern.match(str(file)):
+                return True
 
         return False
 
@@ -194,6 +221,8 @@ class Section:
 sections: List[Section] = []
 known_interfaces: List[str] = []
 known_libraries: List[str] = []
+known_interfaces_set: set = set()
+known_libraries_set: set = set()
 
 
 def register_section(section: Type[Section]):
@@ -202,10 +231,12 @@ def register_section(section: Type[Section]):
     for interface in section.interfaces:
         assert interface not in known_interfaces, f"Duplicate interface: {interface}"
         known_interfaces.append(interface)
+        known_interfaces_set.add(interface)
 
     for library in section.libraries:
         assert library not in known_libraries, f"Duplicate shared library: {library}"
         known_libraries.append(library)
+        known_libraries_set.add(library)
 
 
 def register_sections(sections_path: Path):

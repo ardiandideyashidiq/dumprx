@@ -211,3 +211,69 @@ def test_twrp_generate_failure_is_best_effort(monkeypatch, tmp_path):
     monkeypatch.setattr(twrp, "DeviceTree", BrokenTree)
     twrp.generate(cfg)
     assert not (tmp_path / "twrp-device-tree").exists()
+
+
+def test_twrpdtgen_gki_header_v4_skips_kernel_in_prebuilt(tmp_path):
+    from twrpdtgen.image_info import ImageInfo
+    from twrpdtgen.templates import render_template
+
+    kernel_file = tmp_path / "kernel"
+    kernel_file.write_bytes(b"KERNEL")
+    dtb_file = tmp_path / "dtb"
+    dtb_file.write_bytes(b"DTB")
+    dtbo_file = tmp_path / "dtbo"
+    dtbo_file.write_bytes(b"DTBO")
+
+    info = ImageInfo(
+        header_version="4",
+        vendor_boot_size=1024,
+        ramdisk_compression="lz4",
+        kernel=kernel_file,
+        dtb=dtb_file,
+        dtbo=dtbo_file,
+    )
+    assert info.is_header_v4_gki is True
+
+    render_template(
+        tmp_path,
+        "BoardConfig.mk",
+        device_info=type(
+            "DI",
+            (),
+            {
+                "manufacturer": "itel",
+                "codename": "P661N",
+                "device_is_ab": False,
+                "arch": type(
+                    "Arch",
+                    (),
+                    {
+                        "arch": "arm64",
+                        "arch_variant": "armv8-a",
+                        "cpu_abi": "arm64-v8a",
+                        "cpu_abi2": "",
+                        "bitness": 64,
+                    },
+                )(),
+                "second_arch": None,
+                "cpu_variant": "generic",
+                "second_cpu_variant": None,
+                "device_uses_updatable_apex": False,
+                "bootloader_board_name": "P661N",
+                "screen_density": "320",
+                "use_vulkan": False,
+                "device_uses_system_as_root": False,
+            },
+        )(),
+        fstab=type("FST", (), {"get_ab_partitions_models": lambda self: []})(),
+        image_info=info,
+        current_year="2026",
+        version="1.0.0",
+    )
+    rendered = (tmp_path / "BoardConfig.mk").read_text()
+    assert "BOARD_RAMDISK_USE_LZ4 := true" in rendered
+    assert "TARGET_NO_KERNEL := true" in rendered
+    assert "TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb.img" in rendered
+    assert "TARGET_FORCE_PREBUILT_KERNEL" not in rendered
+    assert "TARGET_PREBUILT_KERNEL" not in rendered
+

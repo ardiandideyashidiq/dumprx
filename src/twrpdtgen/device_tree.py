@@ -165,13 +165,13 @@ class DeviceTree:
 		chmod(device_tree_folder / "setup-makefiles.sh", S_IRWXU | S_IRGRP | S_IROTH)
 
 		logger.debug("Copying kernel...")
-		if self.image_info.kernel is not None:
+		if not self.image_info.is_header_v4_gki and self.image_info.kernel is not None:
 			copyfile(self.image_info.kernel, prebuilt_path / "kernel")
 		if self.image_info.dt is not None:
 			copyfile(self.image_info.dt, prebuilt_path / "dt.img")
 		if self.image_info.dtb is not None:
 			copyfile(self.image_info.dtb, prebuilt_path / "dtb.img")
-		if self.image_info.dtbo is not None:
+		if not self.image_info.is_header_v4_gki and self.image_info.dtbo is not None:
 			copyfile(self.image_info.dtbo, prebuilt_path / "dtbo.img")
 
 		logger.debug("Copying fstab...")

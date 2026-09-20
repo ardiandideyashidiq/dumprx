@@ -92,3 +92,32 @@ def test_generate_failure_is_best_effort(monkeypatch, tmp_path):
     monkeypatch.setattr(aospdtgen, "DeviceTree", BrokenTree)
     aospdtgen.generate(_cfg(tmp_path))
     assert not (tmp_path / "aosp-device-tree").exists()
+
+
+def test_is_blob_allowed():
+    from aospdtgen.proprietary_files.ignore import is_blob_allowed
+
+    assert is_blob_allowed(Path("bin/sh")) is False
+    assert is_blob_allowed(Path("bin/custom_service")) is True
+    assert is_blob_allowed(Path("lib/libc.so")) is False
+    assert is_blob_allowed(Path("lib/libcustom.so")) is True
+    assert is_blob_allowed(Path("etc/selinux/plat_sepolicy.cil")) is False
+
+
+def test_unpack_cache_reuses_existing(tmp_path):
+    from twrpdtgen.image_info import _UNPACK_CACHE, ImageInfo, _unpack_one
+
+    image = tmp_path / "boot.img"
+    image.write_bytes(b"\x00" * 32)
+    outdir = tmp_path / "boot_unpacked"
+    outdir.mkdir()
+
+    cache_key = (image.resolve(), outdir.resolve())
+    fake_info = ImageInfo(header_version="4", base_address="0x40078000")
+    _UNPACK_CACHE[cache_key] = (fake_info, {"--header_version": "4"})
+
+    info, pairs = _unpack_one(image, outdir, tool=Path("/nonexistent"))
+    assert info.header_version == "4"
+    assert info.base_address == "0x40078000"
+    assert pairs["--header_version"] == "4"
+

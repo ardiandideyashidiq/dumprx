@@ -63,6 +63,9 @@ TARGET_USES_VULKAN := true
 
 {% endif %}
 # Kernel
+{% if image_info.ramdisk_compression == "lz4" %}
+BOARD_RAMDISK_USE_LZ4 := true
+{% endif %}
 {% if image_info.header_version != "0" %}
 BOARD_BOOTIMG_HEADER_VERSION := {{ image_info.header_version }}
 {% endif %}
@@ -104,7 +107,19 @@ TARGET_KERNEL_CONFIG := {{ device_info.codename }}_defconfig
 TARGET_KERNEL_SOURCE := kernel/{{ device_info.manufacturer }}/{{ device_info.codename }}
 
 # Kernel - prebuilt
-{% if image_info.kernel %}
+{% if image_info.is_header_v4_gki %}
+TARGET_NO_KERNEL := true
+{% if image_info.dt %}
+TARGET_PREBUILT_DT := $(DEVICE_PATH)/prebuilt/dt.img
+BOARD_MKBOOTIMG_ARGS += --dt $(TARGET_PREBUILT_DT)
+BOARD_KERNEL_SEPARATED_DT := 
+{% endif %}
+{% if image_info.dtb %}
+TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb.img
+BOARD_MKBOOTIMG_ARGS += --dtb $(TARGET_PREBUILT_DTB)
+BOARD_INCLUDE_DTB_IN_BOOTIMG := 
+{% endif %}
+{% elif image_info.kernel %}
 TARGET_FORCE_PREBUILT_KERNEL := true
 ifeq ($(TARGET_FORCE_PREBUILT_KERNEL),true)
 TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/kernel

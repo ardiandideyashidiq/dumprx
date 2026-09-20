@@ -7,6 +7,8 @@ from sebaubuntu_libs.libandroid.partitions.partition import AndroidPartition
 from sebaubuntu_libs.libandroid.partitions.partition_model import TREBLE
 from typing import List, Optional
 
+from loguru import logger
+
 from aospdtgen.proprietary_files.ignore import is_blob_allowed
 from aospdtgen.proprietary_files.section import Section, sections
 
@@ -30,6 +32,11 @@ class ProprietaryFilesList:
                 if is_blob_allowed(file_relative):
                     files.append(file)
 
+            logger.debug(
+                "Processing proprietary files for partition {} ({} allowed blobs)",
+                partition.model.name,
+                len(files),
+            )
             for section in self.sections:
                 files = section.add_files(files, partition)
 

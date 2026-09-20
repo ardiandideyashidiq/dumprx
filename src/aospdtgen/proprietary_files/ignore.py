@@ -969,31 +969,36 @@ IGNORE_PATTERNS = [
 ]
 
 
+_IGNORE_BINARIES_SET = set(IGNORE_BINARIES)
+_IGNORE_SHARED_LIBS_SET = set(IGNORE_SHARED_LIBS)
+_IGNORE_FILENAMES_SET = set(IGNORE_FILENAMES)
+_IGNORE_EXTENSIONS_SET = set(IGNORE_EXTENSIONS)
+_IGNORE_FOLDERS_SET = set(IGNORE_FOLDERS)
+_IGNORE_PATHS_SET = set(IGNORE_PATHS)
+
+
 def is_blob_allowed(file: Path) -> bool:
     """
     Check if the lib is not in the disallowed list.
     """
-    if file.name in IGNORE_BINARIES:
+    name = file.name
+    if name in _IGNORE_BINARIES_SET or name in _IGNORE_SHARED_LIBS_SET or name in _IGNORE_FILENAMES_SET:
         return False
 
-    if file.name in IGNORE_SHARED_LIBS:
+    ext = removeprefix(file.suffix, ".")
+    if ext in _IGNORE_EXTENSIONS_SET:
         return False
 
-    if file.name in IGNORE_FILENAMES:
-        return False
-
-    if removeprefix(file.suffix, ".") in IGNORE_EXTENSIONS:
-        return False
-
-    for folder in [str(folder) for folder in file.parents]:
-        if folder in IGNORE_FOLDERS:
+    for folder in file.parents:
+        if str(folder) in _IGNORE_FOLDERS_SET:
             return False
 
-    if str(file) in IGNORE_PATHS:
+    str_file = str(file)
+    if str_file in _IGNORE_PATHS_SET:
         return False
 
     for pattern in IGNORE_PATTERNS:
-        if pattern.match(str(file)):
+        if pattern.match(str_file):
             return False
 
     return True
