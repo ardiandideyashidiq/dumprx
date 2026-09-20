@@ -1,206 +1,57 @@
-<div align="center">
+# DumprX
 
-  <h1>DumprX</h1>
+Android firmware dumper — extract, parse, and publish partition dumps. A revamped, maintained fork of [Dumpyara](https://github.com/AndroidDumps/) / [Phoenix Firmware Dumper](https://github.com/DroidDumps), rewritten as a Python package.
 
-  <h4>Based Upon Phoenix Firmware Dumper from DroidDumps, with some Changes and Improvements</h4>
+## Features
 
-</div>
+- Dumps firmware from files, folders, or direct URLs
+- Downloads from filehosters (mega.nz, mediafire, AndroidFileHost, Google Drive)
+- Extracts zip/7z/tar, kdz, ozip, ofp, ops, payload.bin, UPDATE.APP, nb0, super, and more
+- Generates a device README plus device trees (TWRP/AOSP) from the dump
+- Publishes dumps to GitLab or GitHub (private by default), with Telegram notifications
+- Every dump is a local git repo, so it stays push-ready even without credentials
 
+## Install
 
-## What this really is
-
-You might've used firmware extractor via dumpyara from https://github.com/AndroidDumps/. This toolkit is revamped edition of the tools with some improvements and feature additions.
-
-## The improvements over dumpyara
-
-- [x] dumpyara's and firmware_extractor's scripts are merged with handpicked shellcheck-ed and pylint-ed improvements
-- [x] The script can download and dump firmware from different filehosters such as Mega.NZ, Mediafire.com, AndroidFileHost.com and from Google Drive URLs
-- [x] File as-well-as Folder as an input is processed thoroughly to check all kinds of supported firmware types
-- [x] All the external tools are now inherited into one place and unnesessary files removed
-- [x] Binary tools are updated to latest available source
-- [x] LG KDZ utilities are updated to support latest firmwares
-- [x] Installation requirements are narrowed down to minimal for playing with this toolkit
-- [x] Recovery Dump is made too
-
-## Recommendations before Playing with Firmware Dumper
-
-This toolkit can run in any Debian/Ubuntu distribution, Ubuntu Bionic and Focal would be best, other versions are not tested.
-
-Support for Alpine Linux is added and tested. You can give it a try.
-
-For any other UNIX Distributions, the internal setup routine detects the package manager and installs the required programs via its own package manager.
-
-## Prepare toolkit dependencies / requirements
-
-DumprX is a Python package managed with [uv](https://docs.astral.sh/uv/).
-Setup is a single step:
+Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv run dumprx --setup
-```
-
-`--setup` installs system-level binaries (7zz, simg2img, aria2c, etc.), the
-`uv` tool, runtime helper tools, and Python dependencies. It records a state
-file on success. On any later run without `--setup`, DumprX re-runs setup
-automatically if that state file is missing or incomplete. Use `--no-setup`
-to skip that auto-run (for scripts/CI).
-
-To install the Python tool with uv only:
-
-```bash
-uv sync
+uv tool install git+https://github.com/ardiandideyashidiq/dumprx
 ```
 
 ## Usage
 
-Run this toolkit with proper firmware file/folder path or URL:
-
 ```bash
-uv run dumprx 'Firmware File/Extracted Folder -OR- Supported Website Link'
+dumprx 'Firmware File/Folder -OR- Supported Website Link'
 ```
 
 Useful flags:
 
 ```bash
-uv run dumprx --local firmware.bin          # extract + README, no push (recommended first run)
-uv run dumprx --readme-only                 # regenerate README.md from existing OUTDIR
-uv run dumprx --push-only 'link-or-folder'  # skip extraction, push existing OUTDIR
-uv run dumprx -o /data/dumps firmware.bin   # write output under /data/dumps instead of /tmp/out
-uv run dumprx --setup                       # install prerequisites and record setup state
-uv run dumprx --no-setup firmware.bin       # skip the auto-run setup check
-uv run dumprx --force firmware.bin          # re-dump even if already dumped on this machine
-uv run dumprx --github --public firmware.bin
-uv run dumprx --help
+dumprx --local firmware.bin          # extract + README, no push (recommended first run)
+dumprx --readme-only                 # regenerate README.md from existing OUTDIR
+dumprx --push-only 'link-or-folder'  # skip extraction, push existing OUTDIR
+dumprx -o /data/dumps firmware.bin   # write output under /data/dumps instead of /tmp/out
+dumprx --setup                       # install prerequisites and record setup state
+dumprx --no-setup firmware.bin       # skip the auto-run setup check
+dumprx --force firmware.bin          # re-dump even if already dumped on this machine
+dumprx --github --public firmware.bin
+dumprx --help
 ```
 
-Mode defaults to `gitlab` (matches the legacy Bash dumper defaults), and repos are
-created private unless `--public` is given.
+Runs without `--setup` auto-run setup if the state file is missing or incomplete.
 
-Every dump is a git repository by default: after extraction the output directory
-is `git init`-ed and the dump is committed in stages (README, LFS setup, apps,
-partitions, extras) in every mode — including `--local`, which adds no remote and
-pushes nothing. GitLab/GitHub pushes reuse those local commits, so a dump stays
-push-ready even when the token is missing: add the credential to `.dumprxenv` and
-re-run to push with no re-extraction.
+## Configuration
 
-Help Context:
+Copy `.dumprxenv.example` to `.dumprxenv` and fill in your tokens:
 
-```text
-  >> Supported Websites:
-        1. Directly Accessible Download Link From Any Website
-        2. Filehosters like - mega.nz | mediafire | gdrive | onedrive | androidfilehost
-         >> Must Wrap Website Link Inside Single-quotes ('')
-  >> Supported File Formats For Direct Operation:
-         *.zip | *.rar | *.7z | *.tar | *.tar.gz | *.tgz | *.tar.md5
-         *.ozip | *.ofp | *.ops | *.kdz | ruu_*exe
-         system.new.dat | system.new.dat.br | system.new.dat.xz
-         system.new.img | system.img | system-sign.img | UPDATE.APP
-         *.emmc.img | *.img.ext4 | system.bin | system-p | payload.bin
-         *.nb0 | .*chunk* | *.pac | *super*.img | *system*.sin
-```
+- `GITLAB_TOKEN` / `GITLAB_INSTANCE` / `GITLAB_GROUP` — GitLab pushes (default mode)
+- `GITHUB_TOKEN` / `GITHUB_ORG` — GitHub pushes (`--github` mode)
+- `TG_TOKEN` / `TG_CHAT` — Telegram notifications
 
-## How to use it to Upload the Dump to GitLab
+## Credits
 
-To automatically push your firmware dumps to a GitLab repository (default mode) and receive Telegram notifications:
+All credit for the underlying tools goes to the original authors:
 
-1. Copy the environment template to create your config file:
-   ```bash
-   cp .dumprxenv.example .dumprxenv
-   ```
-2. Open `.dumprxenv` and fill in your credentials/configurations:
-   - `GITLAB_TOKEN`: Your personal GitLab access token.
-   - `GITLAB_INSTANCE`: The GitLab host domain (defaults to `gitlab.com`).
-   - `GITLAB_GROUP`: Optional GitLab group/organization name. If left blank, your username will be used.
-   - `TG_TOKEN`: Optional Telegram bot token to send status messages.
-   - `TG_CHAT`: Optional Telegram chat/channel ID (defaults to `@DumprXDumps`).
-
-## How to use it to Upload the Dump to GitHub
-
-GitHub mode works like GitLab mode but pushes to github.com instead:
-
-1. In `.dumprxenv`, set:
-   - `GITHUB_TOKEN`: Your GitHub personal access token (fine-grained or classic PAT) used to create the repo via the GitHub API.
-   - `GITHUB_ORG`: Optional GitHub organization name. If left blank, your personal account is used.
-2. Make sure your SSH key is registered on GitHub, since the dump is pushed over SSH like GitLab.
-   Files larger than 50 MB are automatically pushed via Git LFS (GitHub's recommended limit),
-   so you may need `git-lfs` installed.
-3. Run with the github mode:
-   ```bash
-   uv run dumprx --github <firmware-file-or-url>
-   # or
-   uv run dumprx --mode github --public <firmware-file-or-url>
-   ```
-
-> GitHub has no nested namespaces, so a dump that GitLab would store as
-> `group/manufacturer/codename` is created here as a single repo named after the
-> codename with a `_dump` suffix, keeping its original casing (e.g.
-> `Infinix-X6878_dump`) under `GITHUB_ORG` or your personal account.
-
-### Via CI (GitHub Actions)
-
-The `dump` workflow has a **target** input (`gitlab` or `github`). When you pick
-`github`, set these secrets (Settings → Secrets):
-
-- `GITHUB_TOKEN` — PAT used to create the repo via the GitHub API.
-- `GITHUB_SSH_KEY` — private key registered on the target GitHub account (the dump is pushed over SSH).
-- `GITHUB_ORG` *(optional)* — if set, repos are created under this org; otherwise your personal account is used.
-
-## Main Scripture Credit
-
-As mentioned above, this toolkit is entirely focused on improving the Original Firmware Dumper available:  [Dumpyara](https://github.com/AndroidDumps/) [Phoenix Firmware Dumper](https://github.com/DroidDumps)
-
-Credit for those tools goes to everyone whosoever worked hard to put all those programs in one place to make an awesome project.
-
-## Download Utilities Credits
-
-- mega-media-drive_dl.sh (for downloading from mega.nz, mediafire.com, google drive)
-  - shell script, most of it's part belongs to badown by @stck-lzm
-- afh_dl (for downloading from androidfilehosts.com)
-  - python script, by @kade-robertson
-- aria2c
-- wget
-
-## Internal Utilities Credits
-
-- sdat2img.py (system-dat-to-img v1.2, python script)
-  - by @xpirt, @luxi78, @howellzhu
-- simg2img (Android sparse-to-raw images converter, binary built from source)
-  - by @anestisb
-- unsin (Xperia Firmware Unpacker v1.13, binary)
-  - by @IgorEisberg
-- extract\_android\_ota\_payload.py (OTA Payload Extractor, python script)
-  - by @cyxx, with metadata update from [Android's update_engine Git Repository](https://android.googlesource.com/platform/system/update_engine/)
-- extract-dtb.py (dtbs extractor v1.3, python script)
-  - by @PabloCastellano
-- dtc (Device Tree Compiler v1.6, binary built from source)
-  - by kernel.org, from their [dtc Git Repository](https://git.kernel.org/pub/scm/utils/dtc/dtc.git)
-- vmlinux-to-elf and kallsyms_finder (kernel binary to analyzable ELF converter, python scripts)
-  - by @marin-m
-- ozipdecrypt.py (Oppo/Oneplus .ozip Firmware decrypter v1.2, python script)
-  - by @bkerler
-- ofp\_qc\_extract.py and ofp\_mtk\_decrypt.py (Oppo .ofp firmware extractor, python scripts)
-  - by @bkerler
-- opscrypto.py (OnePlus/Oppo ops firmware extractor, python script)
-  - by @bkerler
-- lpunpack (OnePlus/Other super.img unpacker, binary built from source)
-  - by @LonelyFool
-- splituapp.py (UPDATE.APP extractor, python script)
-  - by @superr
-- pacextractor (Extractor of SpreadTrum firmware files with extension pac. See)
-  - by @HemanthJabalpuri
-- nb0-extract (Nokia/Sharp/Infocus/Essential nb0-extract, binary built from source)
-  - by Heineken @Eddie07 / "FIH mobile"
-- kdztools' unkdz.py and undz.py (LG KDZ and DZ Utilities, python scripts)
-  - Originally by IOMonster (thecubed on XDA), Modified by @ehem (Elliott Mitchell) and improved by @steadfasterX
-- RUU\_Decrypt\_Tool (HTC RUU/ROM Decryption Tool v3.6.8, binary)
-  - by @nkk71 and @CaptainThrowback
-- extract-ikconfig (.config file extractor from kernel image, shell script)
-  - From within linux's source code by @torvalds
-- unpackboot.sh (bootimg and ramdisk extractor, modified shell script)
-  - Originally by @xiaolu and @carlitros900, stripped to unpack functionallity, by me @rokibhasansagar
-- twrpdtgen (TWRP device tree generator, vendored fork)
-  - by @SebastianoBarezzi / @ardiandideyashidiq, from [ardiandideyashidiq/twrpdtgen](https://github.com/ardiandideyashidiq/twrpdtgen) (commit `bd0badbe8e3e6eff96837f4da2a7d22a37de5094`)
-- aospdtgen (TeamLineageOS/aospdtgen device tree generator, vendored fork)
-  - from [sebaubuntu-python/aospdtgen](https://github.com/sebaubuntu-python/aospdtgen) (v1.2.1, commit `ff16bea7aabf8133affd9772e12651640712ae9a`)
-- mkbootimg.py and unpack_bootimg.py (AOSP boot image pack/unpack scripts, Apache-2.0)
-  - from [platform/system/tools/mkbootimg](https://android.googlesource.com/platform/system/tools/mkbootimg)
+- [Dumpyara](https://github.com/AndroidDumps/) / [Phoenix Firmware Dumper](https://github.com/DroidDumps) — original firmware dumper this is based on
+- [sdat2img](https://github.com/xpirt/sdat2img) (xpirt), [payload-dumper](https://github.com/vm03/payload_dumper) tooling (cyxx), [twrpdtgen](https://github.com/ardiandideyashidiq/twrpdtgen) (SebastianoBarezzi), [aospdtgen](https://github.com/sebaubuntu-python/aospdtgen), plus bkerler (ozip/ofp/ops tools), IgorEisberg (unsin), nkk71 & CaptainThrowback (RUU), and everyone who contributed to the original toolkit.
